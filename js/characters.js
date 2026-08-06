@@ -784,6 +784,14 @@
       L.push('THE HAND IS THE SUBJECT. Get this exactly right:');
       L.push(visual || exact || '');
       if (guitar) {
+        L.push('');
+        L.push('I am also attaching a chord diagram for this chord. Read it as the exact pattern ' +
+          'for the fingers: each numbered dot is one fingertip, its column is which string, its ' +
+          'row is which fret space. An "o" above a string means that string rings open and no ' +
+          'finger touches it; an "✕" means the string is not played. Match the diagram exactly — ' +
+          'same number of fingers, same strings, same frets.');
+      }
+      if (guitar) {
         const lm = MM.requiredLandmark(chord);
         if (lm) L.push(`FRAMING REQUIREMENT: ${lm}.`);
       }
@@ -872,6 +880,11 @@
         L.push('IMPORTANT: each chord below names a landmark on the neck. That landmark must be ' +
           'inside the frame for that image — do not crop it out, or the hand has nothing to sit ' +
           'against. For open chords that means the nut and the start of the headstock are visible.');
+        L.push('');
+        L.push('For each chord I will also attach its chord diagram. Read it as the pattern for ' +
+          'the fingers: each numbered dot is one fingertip, its column is which string, its row ' +
+          'is which fret space, "o" is an open string nothing touches, "✕" is a string not played. ' +
+          'The diagram is the authority on the hand — match it exactly.');
       }
     } else {
       L.push('Waist-up. The instrument is angled so the face of the fretboard is turned toward ' +

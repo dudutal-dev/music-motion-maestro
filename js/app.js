@@ -446,6 +446,7 @@
               <div style="margin-top:8px;display:flex;gap:5px;justify-content:center">
                 <button class="btn btn-sm" data-action="hear-chord" data-chord="${ch}" data-inst="${isPiano ? 'piano' : 'guitar'}">▶</button>
                 <button class="btn btn-sm btn-ghost" data-action="speak-chord" data-chord="${ch}" data-inst="${isPiano ? 'piano' : 'guitar'}">🔊</button>
+                ${isPiano ? '' : `<button class="btn btn-sm btn-ghost" data-action="export-diagram" data-chord="${ch}" title="הורד דיאגרמה לצירוף לפרומפט">⬇</button>`}
               </div>
             </div>`).join('')}
         </div>`).join('')}
@@ -518,6 +519,38 @@
       if (b) { b.classList.toggle('active'); rebuild(); }
     });
     rebuild();
+  }
+
+  /**
+   * Export a chord diagram as a PNG.
+   * Text can say which finger goes on which string, but that clause competes
+   * with everything else in the prompt and is the first thing to blur. A
+   * diagram states the same thing as a picture, which an image model can
+   * attach to directly — and the app already computes it exactly.
+   */
+  function exportChordDiagram(chord, scale) {
+    const s = scale || 4;
+    const W = 150, H = W * 1.3;
+    let svg = PF.chordDiagramSVG(chord, W);
+    if (!/xmlns=/.test(svg)) svg = svg.replace('<svg ', '<svg xmlns="http://www.w3.org/2000/svg" ');
+    const img = new Image();
+    img.onload = () => {
+      const cv = document.createElement('canvas');
+      cv.width = W * s; cv.height = H * s;
+      const x = cv.getContext('2d');
+      x.fillStyle = '#0a0a0c';
+      x.fillRect(0, 0, cv.width, cv.height);
+      x.drawImage(img, 0, 0, cv.width, cv.height);
+      cv.toBlob(blob => {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = `chord-${chord.replace('#', 'sharp')}.png`; a.click();
+        URL.revokeObjectURL(url);
+        toast(`דיאגרמת ${chord} הורדה — צרף אותה לפרומפט`);
+      }, 'image/png');
+    };
+    img.onerror = () => toast('לא הצלחתי לייצא את הדיאגרמה', true);
+    img.src = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svg)));
   }
 
   /* ---------------- poster assembler ----------------
@@ -1531,6 +1564,7 @@ python scripts/extract_chords.py work/audio.wav --beats work/analysis.json --out
       inp.onchange = () => { const f = inp.files[0]; if (f) loadPortrait(f, url => { if (url) { posterImages[ch] = url; render(); } }); };
       inp.click(); return;
     }
+    if (a === 'export-diagram') return exportChordDiagram(act.dataset.chord);
     if (a === 'chord-poster') return chordPosterModal();
     if (a === 'copy-poster' || a === 'download-poster') {
       const ta = $('#poster-text');
