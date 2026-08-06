@@ -105,6 +105,55 @@
     { id: 'youthful', he: 'צעיר וחלק', v: 'smooth youthful skin with a healthy sheen, minimal texture' }
   ];
 
+  /* Archetypes cover the identity layer, including non-human characters —
+     a photoreal render of an elf or a deity needs its features stated as
+     deliberate design, or the model quietly makes them human. */
+  /* `v` is a short noun phrase; `features` are defaults used ONLY when the user
+     leaves the features field empty. Keeping them separate stops the prompt
+     from saying "pointed ears" twice, which dilutes rather than reinforces. */
+  const ARCHETYPES = [
+    { id: 'none', he: '— ללא —', v: '', features: '' },
+    { id: 'human', he: 'מוזיקאי אנושי', v: 'a contemporary human musician', features: '' },
+    { id: 'elf', he: 'אלף / בן-לילית', v: 'an elven being',
+      features: 'long tapered pointed ears, ethereal fine features, luminous pale eyes, flowing waist-length hair' },
+    { id: 'deity', he: 'ישות מיתולוגית', v: 'a mythic deity-like figure',
+      features: 'an otherworldly presence, subtle divine glow on the skin, regal bearing, ceremonial ornaments' },
+    { id: 'cyber', he: 'סייברפאנק', v: 'a cyberpunk performer',
+      features: 'subtle chrome implants at the temple and jaw, fiber-optic strands woven through the hair, faint under-skin circuitry light' },
+    { id: 'celestial', he: 'שמימי / קוסמי', v: 'a celestial being',
+      features: 'faintly star-flecked skin, iridescent sheen, hair that drifts as if underwater' },
+    { id: 'vintage', he: 'רטרו שנות ה-70', v: 'a 1970s rock musician',
+      features: 'period-accurate hair and styling, analogue film aesthetic' }
+  ];
+
+  /* An ornate instrument is half the composition in this kind of image, so it
+     deserves the same treatment as the character: a named design language. */
+  const INSTRUMENT_THEMES = [
+    { id: 'none', he: '— ללא —', v: '' },
+    { id: 'egyptian', he: 'מצרי עתיק',
+      v: 'ancient-Egyptian revival design, carved hieroglyph panels, a Horus falcon head at the upper bout, ' +
+        'stepped pyramid motif, lapis-blue and polished gold inlay, turquoise and carnelian gemstones, ' +
+        'an ankh inlaid in the headstock, scarab fret markers' },
+    { id: 'oceanic', he: 'ביולומינסנטי / ימי',
+      v: 'deep-sea bioluminescent design, teal metallic body with glowing cyan filigree veins, ' +
+        'abalone shell inlay, coral and jellyfish motifs, pearlescent lacquer' },
+    { id: 'norse', he: 'נורדי / ויקינגי',
+      v: 'Norse design, carved knotwork, runic inscriptions burned into the fretboard, ' +
+        'blackened iron hardware, aged oak body, silver wolf-head detailing' },
+    { id: 'deco', he: 'ארט דקו',
+      v: 'Art Deco design, symmetrical stepped geometry, brushed brass and black lacquer, ' +
+        'mother-of-pearl chevron inlays, fan motifs' },
+    { id: 'biomech', he: 'ביומכני',
+      v: 'biomechanical design, exposed sinew-like cabling, machined titanium ribs, ' +
+        'organic curves fused with precision hardware' },
+    { id: 'celestialInst', he: 'שמימי / אסטרונומי',
+      v: 'celestial design, deep indigo body with a constellation map inlaid in silver, ' +
+        'moon-phase fret markers, orrery-style hardware, faint starlight glow' },
+    { id: 'vintageInst', he: 'וינטג׳ קלאסי',
+      v: 'classic vintage build, sunburst nitrocellulose finish, aged nickel hardware, ' +
+        'honest play wear and light checking in the lacquer' }
+  ];
+
   /* Hands are the failure mode. Naming it explicitly, every time, is the
      single highest-leverage line in a musician prompt. */
   const NEGATIVE_BASE = [
@@ -293,6 +342,7 @@
           `${p.type.id}${p.isDrop ? ' 💥DROP' : ''} | ${p.chord || '—'} | ${p.hand || '—'} | ${p.movement} |`);
       }
       L.push('');
+      L.push.apply(L, fingeringSection(a, inst));
     }
 
     L.push('## PER-PANEL PROMPT PATTERN');
@@ -330,10 +380,11 @@
 
   /** A compact, paste-ready prompt for a single panel. */
   function panelPrompt(character, panel) {
-    // Name the chord before describing the hand: the model anchors on the
-    // chord, then the placement reads as the instruction for it.
+    // Name the chord, then give the exact finger placement. The precise
+    // version beats the generic one — it leaves nothing for the model to guess.
+    const exact = panel.chord ? MM.fingeringSentence(panel.chord, character.instrument) : null;
     const action = `playing the ${instrumentBlock(character)}` +
-      (panel.chord ? `, forming the ${panel.chord} chord: ${panel.hand || ''}` : '') +
+      (panel.chord ? `, forming the ${panel.chord} chord — ${exact || panel.hand || ''}` : '') +
       `, ${panel.movement}`;
     return stack(character, { framing: panel.type.frame, action }) +
       '\n\n' + negativeLine(character);
@@ -344,19 +395,48 @@
   function identityBlock(c) {
     const bits = [];
     if (c.age) bits.push(c.age);
+    const arch = pick(ARCHETYPES, c.archetype, null);
+    if (arch && arch.v) bits.push(arch.v);
     bits.push(c.description || '[describe face, hair, build, distinguishing detail]');
+    // the user's own features win; the archetype only fills the gap
+    const feat = (c.features || '').trim() || (arch && arch.features) || '';
+    if (feat) bits.push(feat);
     if (c.wardrobe) bits.push(`wearing ${c.wardrobe}`);
     if (isPhotoreal(c)) bits.push(pick(SKIN, c.skin).v);
-    return bits.join(', ');
+    return bits.filter(Boolean).join(', ');
   }
 
   /** Reads as one natural noun phrase. If the user's detail already names the
    *  instrument ("custom electric guitar, teal finish") we don't say it twice. */
   function instrumentBlock(c) {
     const base = c.instrument === 'piano' ? 'piano' : 'guitar';
+    const theme = pick(INSTRUMENT_THEMES, c.instrumentTheme, null);
+    const parts = [];
     const d = (c.instrumentDetail || '').trim();
-    if (!d) return c.instrument === 'piano' ? 'grand piano' : 'acoustic guitar';
-    return new RegExp(base, 'i').test(d) ? d : `${d} ${base}`;
+    if (d) parts.push(new RegExp(base, 'i').test(d) ? d : `${d} ${base}`);
+    else parts.push(c.instrument === 'piano' ? 'grand piano' : 'acoustic guitar');
+    if (theme && theme.v) parts.push(theme.v);
+    return parts.join(', ');
+  }
+
+  /** Per-chord finger placement, spelled out. This is the instruction that
+   *  actually stops a generated musician from resting a shapeless hand on the
+   *  neck — the single most common failure in AI images of players. */
+  function fingeringSection(analysis, instrument) {
+    // progressionOf only collapses consecutive repeats; a looping progression
+    // would list the same chord over and over, so take the distinct set.
+    const chords = [...new Set(A.progressionOf(analysis || {}))];
+    if (!chords.length) return [];
+    const L = ['## EXACT FINGERING (copy verbatim into the panel that uses the chord)', ''];
+    for (const ch of chords) {
+      const s = MM.fingeringSentence(ch, instrument);
+      L.push(`- **${ch}** — ${s || 'no stored shape; do not invent one — keep the hands out of frame'}`);
+    }
+    L.push('');
+    L.push('These are real playable shapes. If a panel shows the hands, the fingers must match ' +
+      'the line for that panel\'s chord exactly — same fingers, same strings, same frets.');
+    L.push('');
+    return L;
   }
 
   /** Assemble the layered prompt shared by hero / sheet / panel prompts. */
@@ -465,6 +545,7 @@
   global.Characters = {
     STYLES, PALETTES, TOOLS, PANEL_TYPES,
     CAMERAS, LIGHTING, BACKDROPS, SKIN, NEGATIVE_BASE,
+    ARCHETYPES, INSTRUMENT_THEMES, fingeringSection,
     isPhotoreal, identityBlock, instrumentBlock,
     buildPanels, masterPrompt, panelPrompt, keyframePrompt,
     characterSheetPrompt, characterBrief, toolParams, mmss

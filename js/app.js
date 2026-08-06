@@ -808,14 +808,22 @@ python scripts/extract_chords.py work/audio.wav --beats work/analysis.json --out
           <div class="hint">סגנונות "ריאליסטי" פותחים שדות פוטוריאליזם נוספים.</div></div>
         <div class="field"><label>גיל / מראה כללי</label>
           <input id="c-age" value="${esc(c.age || '')}" placeholder="a man in his mid-20s"></div>
+        <div class="field"><label>ארכיטיפ</label>
+          <select id="c-archetype">${opts(CH.ARCHETYPES, c.archetype)}</select>
+          <div class="hint">דמות לא-אנושית חייבת הצהרה מפורשת, אחרת המודל מחזיר אותה לאנושית.</div></div>
+        <div class="field" style="grid-column:1/-1"><label>מאפיינים ייחודיים / לא-אנושיים</label>
+          <input id="c-features" value="${esc(c.features || '')}"
+            placeholder="long pointed ears, silver-white waist-length hair, pale luminous blue eyes"></div>
 
         <div class="field" style="grid-column:1/-1"><label>זהות הדמות (ננעלת וחוזרת מילה במילה)</label>
           <textarea id="c-desc" placeholder="פנים, שיער, מבנה גוף, פרט חתימה — באנגלית עובד הכי טוב">${esc(c.description || '')}</textarea>
           <div class="hint">לדוגמה: short dark curly hair, light stubble, warm olive skin, calm confident gaze, thin red string bracelet on the right wrist</div></div>
         <div class="field" style="grid-column:1/-1"><label>לבוש</label>
           <input id="c-wardrobe" value="${esc(c.wardrobe || '')}" placeholder="cream ribbed knit polo shirt, off-white trousers"></div>
-        <div class="field" style="grid-column:1/-1"><label>עיצוב הכלי</label>
-          <input id="c-instdetail" value="${esc(c.instrumentDetail || '')}" placeholder="custom electric guitar, deep teal metallic finish, bioluminescent inlays, abalone shell details">
+        <div class="field"><label>שפה עיצובית לכלי</label>
+          <select id="c-insttheme">${opts(CH.INSTRUMENT_THEMES, c.instrumentTheme)}</select></div>
+        <div class="field"><label>עיצוב הכלי (פירוט חופשי)</label>
+          <input id="c-instdetail" value="${esc(c.instrumentDetail || '')}" placeholder="custom electric guitar, polished gold body">
           <div class="hint">כמה שיותר ספציפי — הכלי הוא חצי מהקומפוזיציה.</div></div>
 
         <div id="photoreal-fields" style="display:contents">
@@ -882,8 +890,11 @@ python scripts/extract_chords.py work/audio.wav --beats work/analysis.json --out
       instrument: $('#c-inst').value,
       style: $('#c-style').value,
       age: $('#c-age').value.trim(),
+      archetype: $('#c-archetype').value,
+      features: $('#c-features').value.trim(),
       description: $('#c-desc').value.trim(),
       wardrobe: $('#c-wardrobe').value.trim(),
+      instrumentTheme: $('#c-insttheme').value,
       instrumentDetail: $('#c-instdetail').value.trim(),
       camera: $('#c-camera').value,
       lighting: $('#c-lighting').value,

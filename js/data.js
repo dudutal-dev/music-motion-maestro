@@ -135,6 +135,51 @@
     return { chord: name, quality: p.quality, keys, bass, placement, placementHe };
   }
 
+  /* Prompt-grade fingering instructions.
+     A generic "left hand forms the chord" is exactly the sentence image models
+     ignore — which is why AI musicians so often have a hand resting on the neck
+     in no shape at all. Spelling out finger -> string -> fret gives the model
+     something concrete to place. Strings use the standard numbering where
+     string 1 is the high E and string 6 is the low E. */
+  const GUITAR_FINGER_EN = { 1: 'index finger', 2: 'middle finger', 3: 'ring finger', 4: 'pinky' };
+  const PIANO_FINGER_EN = { 1: 'thumb', 2: 'index finger', 3: 'middle finger', 4: 'ring finger', 5: 'pinky' };
+
+  function guitarFingeringSentence(name) {
+    const f = guitarFingering(name);
+    if (!f) return null;
+    const parts = [];
+    if (f.barre) parts.push(`index finger laid flat barring the strings at fret ${f.baseFret}`);
+    f.shape.forEach((fr, i) => {
+      if (typeof fr !== 'number' || fr <= 0) return;
+      if (f.barre && fr === f.baseFret) return;      // already covered by the barre
+      const fg = f.fingers[i];
+      if (fg > 0) parts.push(`${GUITAR_FINGER_EN[fg]} on string ${6 - i} at fret ${fr}`);
+    });
+    const open = [], muted = [];
+    f.shape.forEach((fr, i) => {
+      if (fr === 0) open.push(6 - i);
+      else if (fr === 'x') muted.push(6 - i);
+    });
+    let s = parts.join(', ');
+    const plural = a => (a.length > 1 ? 's' : '');
+    const list = a => (a.length < 2 ? String(a[0]) : a.slice(0, -1).join(', ') + ' and ' + a[a.length - 1]);
+    if (open.length) s += `; string${plural(open)} ${list(open)} ringing open`;
+    if (muted.length) s += `; string${plural(muted)} ${list(muted)} not played`;
+    return s;
+  }
+
+  function pianoVoicingSentence(name) {
+    const v = pianoVoicing(name, 4);
+    if (!v) return null;
+    return 'right hand: ' +
+      v.keys.map(k => `${PIANO_FINGER_EN[k.finger]} on ${k.note}${k.octave}`).join(', ') +
+      `; left hand: ${PIANO_FINGER_EN[5]} on the ${v.bass.note}${v.bass.octave} bass note; ` +
+      'fingers curved, wrists relaxed and level with the forearm';
+  }
+
+  const fingeringSentence = (name, instrument) =>
+    instrument === 'piano' ? pianoVoicingSentence(name) : guitarFingeringSentence(name);
+
   function romanNumeral(chord, key) {
     if (!key || !key.tonic) return '';
     const p = parseChord(chord);
@@ -223,6 +268,7 @@
   global.MM = {
     PITCHES, PITCHES_HE, STRINGS, GUITAR, CHORD_NAMES,
     parseChord, guitarFingering, pianoVoicing, romanNumeral,
+    guitarFingeringSentence, pianoVoicingSentence, fingeringSentence,
     parseVideoId, thumbUrl, Store
   };
 })(window);
