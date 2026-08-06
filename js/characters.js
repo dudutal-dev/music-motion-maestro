@@ -407,6 +407,13 @@
       L.push('');
     }
 
+    if (panels.length) {
+      L.push('## GPT / ChatGPT — worked example (panel 1)');
+      L.push('```');
+      L.push(gptPrompt(character, panels[0]));
+      L.push('```');
+      L.push('');
+    }
     L.push('## PER-PANEL PROMPT PATTERN');
     L.push('For each row, expand into a full prompt:');
     L.push('');
@@ -629,6 +636,65 @@
     return bits.filter(Boolean).join(', ');
   }
 
+  /**
+   * GPT / ChatGPT variant. GPT follows labelled instruction blocks far better
+   * than a comma-separated pile or a single long paragraph — it reads them as
+   * requirements rather than as mood. The hand gets its own block because it
+   * is the thing that has to be obeyed, not interpreted.
+   */
+  function gptPrompt(c, panel) {
+    const photo = isPhotoreal(c);
+    const guitar = c.instrument !== 'piano';
+    const label = panel ? panel.label : 'mid';
+    const scene = pick(SCENES, c.scene, null);
+    const L = [];
+
+    L.push(`Create a ${photo ? 'photorealistic 3D character render' : firstClause(pick(STYLES, c.style, STYLES[3]).anchor)}, portrait orientation.`);
+    L.push('');
+    L.push('SUBJECT — keep every detail below identical in every image:');
+    L.push(identityBlock(c, label));
+    L.push('');
+    L.push('INSTRUMENT:');
+    L.push(instrumentBlock(c));
+    L.push('');
+    if (panel && panel.chord) {
+      const exact = MM.fingeringSentence(panel.chord, c.instrument);
+      // A, E and F are spoken as vowel sounds ("an A minor", not "a A minor")
+      const art = /^[AEF]/.test(panel.chord) ? 'an' : 'a';
+      L.push(`ACTION — playing ${art} ${panel.chord} chord. The hand position is a requirement, not a suggestion:`);
+      L.push(exact || '');
+      if (guitar) L.push('The strumming hand is over the body of the instrument, mid-stroke across the strings.');
+      L.push('The fingertips press the strings directly behind the fret wire, not in the middle of the fret space.');
+    } else {
+      L.push(`ACTION: holding the ${guitar ? 'guitar' : 'piano'}, both hands correctly and naturally placed on it.`);
+    }
+    L.push('');
+    L.push('BODY:');
+    L.push(INTENSITY[label] || INTENSITY.mid);
+    L.push('');
+    L.push('SCENE:');
+    L.push((scene && scene.v) || c.world || pick(BACKDROPS, c.backdrop).v);
+    L.push('');
+    L.push('LIGHT AND CAMERA:');
+    L.push(pick(LIGHTING, c.lighting).v + '; ' + pick(CAMERAS, c.camera).v);
+    L.push('');
+    if (c.palette) { L.push('COLOR:'); L.push(c.palette); L.push(''); }
+    L.push('MUST AVOID — check these before you finish:');
+    L.push('- Hands: exactly five fingers per hand, correct anatomy, no fused or extra fingers.');
+    L.push(guitar
+      ? '- The fretting hand must actually form the named chord; no vague hand resting on the neck.'
+      : '- The fingers must actually depress the named keys; no hands hovering above the keyboard.');
+    L.push(guitar ? '- Six strings, straight neck, correct number of tuning pegs.'
+      : '- Correct black-key grouping (alternating twos and threes).');
+    L.push('- No waxy or plastic skin, no text or watermarks.');
+    if (c.portrait) {
+      L.push('');
+      L.push('REFERENCE: use the attached image for the face, hair, wardrobe and instrument. ' +
+        'Do not redesign the character — only the pose, the hand and the framing change.');
+    }
+    return L.join('\n');
+  }
+
   /** Catch the things that quietly ruin a generation before the user pastes it. */
   function promptHealth(text, c, panel) {
     const words = String(text).trim().split(/\s+/).length;
@@ -688,6 +754,18 @@
     L.push('**Framing for every panel:** waist-up, the fretting hand clearly visible on the neck ' +
       'and in sharp focus, instrument angled so the fingers read, consistent scale and lighting.');
     L.push('');
+    L.push('## GPT / ChatGPT — paste this once, then request each chord');
+    L.push('```');
+    L.push(gptPrompt(c, null));
+    L.push('');
+    L.push('I will now name chords one at a time. For each one, generate the same character in the ' +
+      'same scene and lighting, changing ONLY the fretting hand to the exact fingering I give you. ' +
+      'Keep the face, hair, wardrobe and instrument identical every time.');
+    L.push('```');
+    L.push('');
+    L.push('Then send one line per chord, e.g. `Now: A minor — ' +
+      (MM.fingeringSentence('Am', inst) || '') + '`');
+    L.push('');
 
     for (const g of groups) {
       L.push(`## ${g.he}`);
@@ -699,6 +777,7 @@
         L.push(`- **Fingering:** ${exact}`);
         const panelLike = { label: 'mid', chord: ch, type: PANEL_TYPES[2] };
         L.push('- **Midjourney:** `' + compactPrompt(c, panelLike) + ' ' + mjParams + '`');
+        L.push('- **GPT follow-up:** `Now: ' + ch + ' — ' + exact + '`');
         L.push('');
       }
     }
@@ -740,7 +819,7 @@
     STYLES, PALETTES, TOOLS, PANEL_TYPES,
     CAMERAS, LIGHTING, BACKDROPS, SKIN, NEGATIVE_BASE,
     ARCHETYPES, INSTRUMENT_THEMES, SCENES, INTENSITY, fingeringSection, wardrobeFor,
-    compactPrompt, shortHand, promptHealth, chordPosterPrompts,
+    compactPrompt, gptPrompt, shortHand, promptHealth, chordPosterPrompts,
     isPhotoreal, identityBlock, instrumentBlock,
     buildPanels, masterPrompt, panelPrompt, keyframePrompt,
     characterSheetPrompt, characterBrief, toolParams, mmss
