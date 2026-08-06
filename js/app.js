@@ -22,6 +22,7 @@
     performer: null,
     stageChar: null,
     stageMode: 'anim',
+    chordInst: 'guitar',
     lastBeatIndex: -1,
     activeLesson: null
   };
@@ -63,6 +64,7 @@
     lib: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h4v16H4zM11 4h3v16h-3zM17.5 5l3 15"/></svg>',
     stage: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="7" r="3"/><path d="M5 21v-2a5 5 0 0 1 5-5h4a5 5 0 0 1 5 5v2"/></svg>',
     chars: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="8" r="3.2"/><path d="M2.5 20v-1.6A4.9 4.9 0 0 1 7.4 13.5h3.2a4.9 4.9 0 0 1 4.9 4.9V20"/><path d="M16 5.2a3.2 3.2 0 0 1 0 6.1M18.5 13.9a4.9 4.9 0 0 1 3 4.5V20"/></svg>',
+    chords: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 3v18M12 3v18M16 3v18M4 9h16M4 15h16"/></svg>',
     lessons: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 6.5S9.5 4 6 4H3v13h3c3.5 0 6 2 6 2s2.5-2 6-2h3V4h-3c-3.5 0-6 2.5-6 2.5z"/></svg>',
     settings: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-2.7 1.1V21a2 2 0 1 1-4 0v-.1A1.6 1.6 0 0 0 7.5 19.4a1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1A1.6 1.6 0 0 0 3 14.5H3a2 2 0 1 1 0-4h.1A1.6 1.6 0 0 0 4.6 8.5a1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3H9a1.6 1.6 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 2.7 1.1 1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V9a1.6 1.6 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z"/></svg>',
     play: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.5v13l11-6.5z"/></svg>',
@@ -78,6 +80,7 @@
       ['library', 'הספרייה שלי', icons.lib],
       ['stage', 'במה חיה', icons.stage],
       ['characters', 'דמויות', icons.chars],
+      ['chords', 'ספריית אקורדים', icons.chords],
       ['lessons', 'שיעורים', icons.lessons],
       ['settings', 'הגדרות', icons.settings]
     ];
@@ -313,6 +316,89 @@
     </div>`;
   }
 
+  /* ---------------- chord library ---------------- */
+  function viewChords() {
+    const isPiano = state.chordInst === 'piano';
+    const total = MM.CHORD_GROUPS.reduce((n, g) => n + g.chords.length, 0);
+    return `<div class="page">
+      ${pageHead('ספריית האקורדים', `${total} אקורדים · האצבעות בדיוק על האקורד`)}
+      <div class="chips" style="margin-bottom:8px">
+        <button class="chip ${!isPiano ? 'active' : ''}" data-cinst="guitar">🎸 גיטרה</button>
+        <button class="chip ${isPiano ? 'active' : ''}" data-cinst="piano">🎹 פסנתר</button>
+        <button class="btn btn-sm" data-action="chord-poster" style="margin-inline-start:auto">
+          🖼️ צור פוסטר עם דמות</button>
+      </div>
+      <div class="panel" style="padding:14px 18px;margin-bottom:24px">
+        <div style="font-size:12.5px;color:var(--text-3);line-height:1.7">
+          <b style="color:var(--text-2)">מספרי אצבעות:</b> 1 = מורה · 2 = אמה · 3 = קמיצה · 4 = זרת
+          &nbsp;·&nbsp; <b style="color:var(--text-2)">✕</b> = מיתר שלא מנוגן
+          &nbsp;·&nbsp; <b style="color:var(--text-2)">o</b> = מיתר פתוח
+        </div>
+      </div>
+      ${MM.CHORD_GROUPS.map(g => `
+        <div class="section-head"><div class="section-title">${esc(g.he)}</div>
+          <span class="section-more">${g.chords.length}</span></div>
+        <div style="direction:ltr;display:grid;gap:18px;grid-template-columns:repeat(auto-fill,minmax(${isPiano ? 250 : 132}px,1fr))">
+          ${g.chords.map(ch => `
+            <div style="text-align:center">
+              ${isPiano ? PF.keyboardDiagramSVG(ch, 240) : PF.chordDiagramSVG(ch, 128)}
+              ${isPiano ? `<div style="margin-top:6px;font-weight:800;font-size:13px">${ch}</div>` : ''}
+              <div style="margin-top:8px;display:flex;gap:5px;justify-content:center">
+                <button class="btn btn-sm" data-action="hear-chord" data-chord="${ch}" data-inst="${isPiano ? 'piano' : 'guitar'}">▶</button>
+                <button class="btn btn-sm btn-ghost" data-action="speak-chord" data-chord="${ch}" data-inst="${isPiano ? 'piano' : 'guitar'}">🔊</button>
+              </div>
+            </div>`).join('')}
+        </div>`).join('')}
+    </div>`;
+  }
+
+  function chordPosterModal() {
+    const chars = Store.state.characters;
+    if (!chars.length) {
+      return modal('פוסטר אקורדים', `<div class="empty">
+        <div class="empty-icon">🎭</div><h3>צריך דמות קודם</h3>
+        <p>הפוסטר מציג את אותה דמות מנגנת כל אקורד — צור דמות ונעל אותה.</p></div>`,
+        `<button class="btn btn-primary" data-action="new-character">צור דמות</button>
+         <button class="btn btn-ghost" data-action="close-modal">סגור</button>`);
+    }
+    const c = chars[0];
+    modal('פוסטר אקורדים עם דמות', `
+      <div class="field" style="margin-bottom:14px">
+        <label>דמות</label>
+        <select id="poster-char">${chars.map(x =>
+          `<option value="${x.id}">${esc(x.name)}</option>`).join('')}</select>
+      </div>
+      <div class="field" style="margin-bottom:14px">
+        <label>קבוצות אקורדים</label>
+        <div class="chips" id="poster-groups">
+          ${MM.CHORD_GROUPS.map((g, i) =>
+            `<button class="chip ${i < 4 ? 'active' : ''}" data-group="${g.id}">${esc(g.he)}</button>`).join('')}
+        </div>
+      </div>
+      <div class="field">
+        <label>פרומפטים — אחד לכל אקורד</label>
+        <textarea id="poster-text" readonly style="min-height:340px"></textarea>
+      </div>`,
+      `<button class="btn btn-primary" data-action="copy-poster">העתק</button>
+       <button class="btn" data-action="download-poster">הורד .md</button>
+       <button class="btn btn-ghost" data-action="close-modal">סגור</button>`);
+
+    const rebuild = () => {
+      const ch = Store.getCharacter($('#poster-char').value) || c;
+      const on = [...document.querySelectorAll('#poster-groups .chip.active')].map(b => b.dataset.group);
+      const groups = MM.CHORD_GROUPS.filter(g => on.includes(g.id));
+      $('#poster-text').value = groups.length
+        ? CH.chordPosterPrompts(ch, groups)
+        : 'בחר לפחות קבוצת אקורדים אחת.';
+    };
+    $('#poster-char').addEventListener('change', rebuild);
+    $('#poster-groups').addEventListener('click', e => {
+      const b = e.target.closest('[data-group]');
+      if (b) { b.classList.toggle('active'); rebuild(); }
+    });
+    rebuild();
+  }
+
   /* ---------------- lessons ---------------- */
   function viewLessons() {
     if (state.activeLesson) return viewLessonDetail(state.activeLesson);
@@ -416,7 +502,8 @@ python scripts/build_sync_map.py work/analysis.json --chords work/chords.json --
     if (state.route === 'stage') ensureStageTrack();
     const views = {
       home: viewHome, library: viewLibrary, stage: viewStage,
-      characters: viewCharacters, lessons: viewLessons, settings: viewSettings
+      characters: viewCharacters, chords: viewChords,
+      lessons: viewLessons, settings: viewSettings
     };
     $('#view').innerHTML = (views[state.route] || viewHome)();
 
@@ -1031,6 +1118,21 @@ python scripts/extract_chords.py work/audio.wav --beats work/analysis.json --out
         () => { ta.removeAttribute('readonly'); ta.select(); document.execCommand('copy'); toast('הועתק'); });
       return;
     }
+    if (a === 'chord-poster') return chordPosterModal();
+    if (a === 'copy-poster' || a === 'download-poster') {
+      const ta = $('#poster-text');
+      if (a === 'copy-poster') {
+        navigator.clipboard.writeText(ta.value).then(() => toast('הועתק'),
+          () => { ta.removeAttribute('readonly'); ta.select(); document.execCommand('copy'); toast('הועתק'); });
+      } else {
+        const blob = new Blob([ta.value], { type: 'text/markdown;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url; link.download = 'chord-poster.md'; link.click();
+        URL.revokeObjectURL(url);
+      }
+      return;
+    }
     if (a === 'master-prompt') return masterPromptModal(act.dataset.id);
     if (a === 'copy-mp') {
       const ta = $('#mp-text');
@@ -1110,6 +1212,9 @@ python scripts/extract_chords.py work/audio.wav --beats work/analysis.json --out
       else { LS.Audio.startMetronome(+$('#metro-bpm').value, 4); act.textContent = '■ עצור'; }
       return;
     }
+
+    const cinst = e.target.closest('[data-cinst]');
+    if (cinst) { state.chordInst = cinst.dataset.cinst; return render(); }
 
     // stage display mode
     const mode = e.target.closest('[data-mode]');

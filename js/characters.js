@@ -665,6 +665,50 @@
     }
   }
 
+  /**
+   * A full chord-chart poster: the character playing every chord, each panel
+   * carrying its own exact fingering. Same locked identity throughout — only
+   * the hand changes, which is the entire point of the artifact.
+   */
+  function chordPosterPrompts(c, groups) {
+    const inst = c.instrument === 'piano' ? 'piano' : 'guitar';
+    const mjParams = toolParams(c, 'midjourney').split('\n')[0];
+    const L = [];
+    L.push(`# 🎸 CHORD CHART POSTER — ${c.name || 'Character'}`);
+    L.push('');
+    L.push('One image per chord, same character in every panel, the hand different in each.');
+    L.push('Generate the hero keyframe first and reference it (`--cref` / attached image) so the ' +
+      'face, wardrobe and instrument stay identical across the whole sheet.');
+    L.push('');
+    L.push('## LOCKED IDENTITY (verbatim in every panel)');
+    L.push('```');
+    L.push(identityBlock(c));
+    L.push('```');
+    L.push('');
+    L.push('**Framing for every panel:** waist-up, the fretting hand clearly visible on the neck ' +
+      'and in sharp focus, instrument angled so the fingers read, consistent scale and lighting.');
+    L.push('');
+
+    for (const g of groups) {
+      L.push(`## ${g.he}`);
+      L.push('');
+      for (const ch of g.chords) {
+        const exact = MM.fingeringSentence(ch, inst);
+        if (!exact) continue;
+        L.push(`### ${ch}`);
+        L.push(`- **Fingering:** ${exact}`);
+        const panelLike = { label: 'mid', chord: ch, type: PANEL_TYPES[2] };
+        L.push('- **Midjourney:** `' + compactPrompt(c, panelLike) + ' ' + mjParams + '`');
+        L.push('');
+      }
+    }
+    L.push(negativeLine(c));
+    L.push('');
+    L.push('_Finger numbers: 1 = index, 2 = middle, 3 = ring, 4 = pinky · ' +
+      'x = do not play the string · o = open string_');
+    return L.join('\n');
+  }
+
   /** Everything needed to actually produce this character, in one place. */
   function characterBrief(c) {
     const L = [];
@@ -696,7 +740,7 @@
     STYLES, PALETTES, TOOLS, PANEL_TYPES,
     CAMERAS, LIGHTING, BACKDROPS, SKIN, NEGATIVE_BASE,
     ARCHETYPES, INSTRUMENT_THEMES, SCENES, INTENSITY, fingeringSection, wardrobeFor,
-    compactPrompt, shortHand, promptHealth,
+    compactPrompt, shortHand, promptHealth, chordPosterPrompts,
     isPhotoreal, identityBlock, instrumentBlock,
     buildPanels, masterPrompt, panelPrompt, keyframePrompt,
     characterSheetPrompt, characterBrief, toolParams, mmss

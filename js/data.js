@@ -51,8 +51,29 @@
     'Dm7': { shape: ['x', 'x', 0, 2, 1, 1], fingers: [0, 0, 0, 2, 1, 1] },
     'Em7': { shape: [0, 2, 0, 0, 0, 0],     fingers: [0, 2, 0, 0, 0, 0] },
     'Cmaj7': { shape: ['x', 3, 2, 0, 0, 0], fingers: [0, 3, 2, 0, 0, 0] },
-    'Fmaj7': { shape: ['x', 'x', 3, 2, 1, 0], fingers: [0, 0, 3, 2, 1, 0] }
+    'Fmaj7': { shape: ['x', 'x', 3, 2, 1, 0], fingers: [0, 0, 3, 2, 1, 0] },
+    'F7':  { shape: [1, 3, 1, 2, 1, 1],     fingers: [1, 3, 1, 2, 1, 1] },
+    // suspended chords — the third is replaced by a 2nd or a 4th
+    'Asus2': { shape: ['x', 0, 2, 2, 0, 0],   fingers: [0, 0, 1, 2, 0, 0] },
+    'Asus4': { shape: ['x', 0, 2, 2, 3, 0],   fingers: [0, 0, 1, 2, 3, 0] },
+    'Csus2': { shape: ['x', 3, 0, 0, 3, 3],   fingers: [0, 2, 0, 0, 3, 4] },
+    'Csus4': { shape: ['x', 3, 3, 0, 1, 1],   fingers: [0, 3, 4, 0, 1, 1] },
+    'Dsus2': { shape: ['x', 'x', 0, 2, 3, 0], fingers: [0, 0, 0, 1, 3, 0] },
+    'Dsus4': { shape: ['x', 'x', 0, 2, 3, 3], fingers: [0, 0, 0, 1, 3, 4] },
+    'Esus4': { shape: [0, 2, 2, 2, 0, 0],     fingers: [0, 2, 3, 4, 0, 0] },
+    'Gsus2': { shape: [3, 0, 0, 0, 3, 3],     fingers: [2, 0, 0, 0, 3, 4] },
+    'Gsus4': { shape: [3, 3, 0, 0, 1, 3],     fingers: [2, 3, 0, 0, 1, 4] }
   };
+
+  /** Grouped for the chord library / poster, in teaching order. */
+  const CHORD_GROUPS = [
+    { id: 'major',   he: 'אקורדים מז׳וריים', chords: ['A', 'B', 'C', 'D', 'E', 'F', 'G'] },
+    { id: 'minor',   he: 'אקורדים מינוריים', chords: ['Am', 'Bm', 'Cm', 'Dm', 'Em', 'Fm', 'Gm'] },
+    { id: 'seventh', he: 'אקורדי שביעית',    chords: ['A7', 'B7', 'C7', 'D7', 'E7', 'F7', 'G7'] },
+    { id: 'sus',     he: 'אקורדי Sus',       chords: ['Asus2', 'Asus4', 'Csus2', 'Csus4', 'Dsus2', 'Dsus4', 'Esus4', 'Gsus2', 'Gsus4'] },
+    { id: 'sharp',   he: 'דיאזים ובמולים',   chords: ['C#', 'D#', 'F#', 'G#', 'A#', 'C#m', 'D#m', 'F#m', 'G#m', 'A#m'] },
+    { id: 'ext',     he: 'מורחבים',          chords: ['Am7', 'Dm7', 'Em7', 'Cmaj7', 'Fmaj7'] }
+  ];
 
   /* ---------- theory helpers ---------- */
   function parseChord(name) {
@@ -266,7 +287,7 @@
   };
 
   global.MM = {
-    PITCHES, PITCHES_HE, STRINGS, GUITAR, CHORD_NAMES,
+    PITCHES, PITCHES_HE, STRINGS, GUITAR, CHORD_NAMES, CHORD_GROUPS,
     parseChord, guitarFingering, pianoVoicing, romanNumeral,
     guitarFingeringSentence, pianoVoicingSentence, fingeringSentence,
     parseVideoId, thumbUrl, Store
