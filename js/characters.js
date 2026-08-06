@@ -783,6 +783,10 @@
       L.push('');
       L.push('THE HAND IS THE SUBJECT. Get this exactly right:');
       L.push(visual || exact || '');
+      if (guitar) {
+        const lm = MM.requiredLandmark(chord);
+        if (lm) L.push(`FRAMING REQUIREMENT: ${lm}.`);
+      }
       L.push('');
       L.push(`This is the ${chord} chord. ${exact || ''}`);
       L.push('');
@@ -806,6 +810,10 @@
       L.push('');
       L.push('The instrument is angled so the face of the fretboard is turned toward the camera and ' +
         'the fingertips are unobstructed.');
+      if (guitar) {
+        const lm = MM.requiredLandmark(chord);
+        if (lm) L.push(`FRAMING REQUIREMENT: ${lm}.`);
+      }
       L.push(`Style and light: ${firstClause(style.anchor)}; ${firstClause(pick(LIGHTING, c.lighting).v)}; ` +
         `${firstClause(c.world || pick(BACKDROPS, c.backdrop).v)} kept simple and out of focus so nothing ` +
         'competes with the hand.');
@@ -858,6 +866,13 @@
         ? 'Extreme close-up: only the fretting hand, the neck and the fretboard are in frame. ' +
           'No face, no background, no scene.'
         : 'Extreme close-up: only the hands and the keys are in frame. No face, no background.');
+      if (guitar) {
+        // Each chord names the landmark its position is measured from; if the
+        // crop loses that landmark the position cannot be placed or checked.
+        L.push('IMPORTANT: each chord below names a landmark on the neck. That landmark must be ' +
+          'inside the frame for that image — do not crop it out, or the hand has nothing to sit ' +
+          'against. For open chords that means the nut and the start of the headstock are visible.');
+      }
     } else {
       L.push('Waist-up. The instrument is angled so the face of the fretboard is turned toward ' +
         'the camera. ' + HAND_FOCUS + '.');
@@ -902,7 +917,9 @@
     L.push(`## THE ${chords.length} CHORDS, IN ORDER`);
     L.push('');
     chords.forEach((ch, i) => {
-      L.push(`${i + 1}. **${ch}** (${chordSpoken(ch)}) — ${MM.visualFingering(ch, c.instrument)}`);
+      const lm = guitar ? MM.requiredLandmark(ch) : null;
+      L.push(`${i + 1}. **${ch}** (${chordSpoken(ch)}) — ${MM.visualFingering(ch, c.instrument)}` +
+        (lm ? `. IN FRAME: ${lm}` : ''));
     });
     L.push('');
     L.push('---');

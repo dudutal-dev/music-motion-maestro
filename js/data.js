@@ -235,6 +235,18 @@
     return 'high up the neck, past the double inlay dots';
   }
 
+  /** What must be visible in frame for the stated position to be checkable. */
+  function requiredLandmark(name) {
+    const f = guitarFingering(name);
+    if (!f) return null;
+    if (f.baseFret <= 3) {
+      return 'the nut and the start of the headstock must be visible at the edge of frame, ' +
+        'so the hand can be seen sitting in the very first fret spaces beside it';
+    }
+    return `the inlay dot markers around fret ${f.baseFret} must be visible in frame, ` +
+      'so the hand can be seen sitting against them';
+  }
+
   function visualFingering(name, instrument) {
     if (instrument === 'piano') {
       const v = pianoVoicing(name, 4);
@@ -255,7 +267,14 @@
             `${fretSpaces(fr)}`);
         }
       });
-      if (extras.length) parts.push(extras.join(', '));
+      if (extras.length) {
+        parts.push(extras.join(', '));
+        const n = extras.length + 1, spare = 4 - n;
+        parts.push(`exactly ${n} fingers are in contact with the strings` +
+          (spare > 0
+            ? ` — the remaining ${spare === 1 ? 'finger stays' : spare + ' fingers stay'} clear`
+            : ', all four of them'));
+      }
     } else {
       parts.push(`the fretting hand is ${neckLandmark(f.baseFret)}`);
       const placed = [];
@@ -267,8 +286,13 @@
       // Naming which string each finger takes is what separates A from C from
       // Am — a fingertip count alone describes half the open chords equally.
       if (placed.length) parts.push(placed.join(', '));
-      parts.push('every fingertip is arched and pressing the face of the fretboard, ' +
-        'all of them visible from the front');
+      const n = placed.length, spare = 4 - n;
+      parts.push(`exactly ${n} finger${n > 1 ? 's' : ''} touch${n === 1 ? 'es' : ''} the strings` +
+        (spare > 0
+          ? ` — the other ${spare === 1 ? 'finger stays' : spare + ' fingers stay'} curled ` +
+            'clear of the fretboard, touching nothing'
+          : ', all four of them'));
+      parts.push('every pressing fingertip is arched and visible from the front');
     }
     parts.push('the thumb is behind the neck and hidden from view, not hooked over the top edge');
     const openStrings = [], mutedStrings = [];
@@ -384,7 +408,7 @@
     PITCHES, PITCHES_HE, STRINGS, GUITAR, CHORD_NAMES, CHORD_GROUPS,
     parseChord, guitarFingering, pianoVoicing, romanNumeral,
     guitarFingeringSentence, pianoVoicingSentence, fingeringSentence,
-    visualFingering, neckLandmark, transposeChord, capoShapes,
+    visualFingering, neckLandmark, requiredLandmark, transposeChord, capoShapes,
     parseVideoId, thumbUrl, Store
   };
 })(window);
