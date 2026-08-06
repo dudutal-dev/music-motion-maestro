@@ -67,12 +67,12 @@
 
   /** Grouped for the chord library / poster, in teaching order. */
   const CHORD_GROUPS = [
-    { id: 'major',   he: 'אקורדים מז׳וריים', chords: ['A', 'B', 'C', 'D', 'E', 'F', 'G'] },
-    { id: 'minor',   he: 'אקורדים מינוריים', chords: ['Am', 'Bm', 'Cm', 'Dm', 'Em', 'Fm', 'Gm'] },
-    { id: 'seventh', he: 'אקורדי שביעית',    chords: ['A7', 'B7', 'C7', 'D7', 'E7', 'F7', 'G7'] },
-    { id: 'sus',     he: 'אקורדי Sus',       chords: ['Asus2', 'Asus4', 'Csus2', 'Csus4', 'Dsus2', 'Dsus4', 'Esus4', 'Gsus2', 'Gsus4'] },
-    { id: 'sharp',   he: 'דיאזים ובמולים',   chords: ['C#', 'D#', 'F#', 'G#', 'A#', 'C#m', 'D#m', 'F#m', 'G#m', 'A#m'] },
-    { id: 'ext',     he: 'מורחבים',          chords: ['Am7', 'Dm7', 'Em7', 'Cmaj7', 'Fmaj7'] }
+    { id: 'major',   he: 'אקורדים מז׳וריים', en: 'MAJOR CHORDS', chords: ['A', 'B', 'C', 'D', 'E', 'F', 'G'] },
+    { id: 'minor',   he: 'אקורדים מינוריים', en: 'MINOR CHORDS', chords: ['Am', 'Bm', 'Cm', 'Dm', 'Em', 'Fm', 'Gm'] },
+    { id: 'seventh', he: 'אקורדי שביעית', en: 'SEVENTH CHORDS',    chords: ['A7', 'B7', 'C7', 'D7', 'E7', 'F7', 'G7'] },
+    { id: 'sus',     he: 'אקורדי Sus', en: 'SUS CHORDS',       chords: ['Asus2', 'Asus4', 'Csus2', 'Csus4', 'Dsus2', 'Dsus4', 'Esus4', 'Gsus2', 'Gsus4'] },
+    { id: 'sharp',   he: 'דיאזים ובמולים', en: 'SHARPS & FLATS',   chords: ['C#', 'D#', 'F#', 'G#', 'A#', 'C#m', 'D#m', 'F#m', 'G#m', 'A#m'] },
+    { id: 'ext',     he: 'מורחבים', en: 'EXTENDED CHORDS',          chords: ['Am7', 'Dm7', 'Em7', 'Cmaj7', 'Fmaj7'] }
   ];
 
   /* ---------- theory helpers ---------- */

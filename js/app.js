@@ -23,6 +23,7 @@
     stageChar: null,
     stageMode: 'anim',
     chordInst: 'guitar',
+    posterGroups: ['major', 'minor', 'seventh', 'sus'],
     lastBeatIndex: -1,
     activeLesson: null
   };
@@ -65,6 +66,7 @@
     stage: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="7" r="3"/><path d="M5 21v-2a5 5 0 0 1 5-5h4a5 5 0 0 1 5 5v2"/></svg>',
     chars: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="8" r="3.2"/><path d="M2.5 20v-1.6A4.9 4.9 0 0 1 7.4 13.5h3.2a4.9 4.9 0 0 1 4.9 4.9V20"/><path d="M16 5.2a3.2 3.2 0 0 1 0 6.1M18.5 13.9a4.9 4.9 0 0 1 3 4.5V20"/></svg>',
     chords: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 3v18M12 3v18M16 3v18M4 9h16M4 15h16"/></svg>',
+    poster: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>',
     lessons: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 6.5S9.5 4 6 4H3v13h3c3.5 0 6 2 6 2s2.5-2 6-2h3V4h-3c-3.5 0-6 2.5-6 2.5z"/></svg>',
     settings: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-2.7 1.1V21a2 2 0 1 1-4 0v-.1A1.6 1.6 0 0 0 7.5 19.4a1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1A1.6 1.6 0 0 0 3 14.5H3a2 2 0 1 1 0-4h.1A1.6 1.6 0 0 0 4.6 8.5a1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3H9a1.6 1.6 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.6 1.6 0 0 0 2.7 1.1 1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8V9a1.6 1.6 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.6 1.6 0 0 0-1.5 1z"/></svg>',
     play: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5.5v13l11-6.5z"/></svg>',
@@ -81,6 +83,7 @@
       ['stage', 'במה חיה', icons.stage],
       ['characters', 'דמויות', icons.chars],
       ['chords', 'ספריית אקורדים', icons.chords],
+      ['poster', 'הרכבת פוסטר', icons.poster],
       ['lessons', 'שיעורים', icons.lessons],
       ['settings', 'הגדרות', icons.settings]
     ];
@@ -399,6 +402,147 @@
     rebuild();
   }
 
+  /* ---------------- poster assembler ----------------
+     The generated images arrive one per chord — no model holds 30 distinct
+     correct hand shapes in a single frame. This lays them out into the sheet
+     and burns in the chord name and diagram, which is where the accuracy
+     actually lives. Images stay in memory only; 30 of them would blow the
+     localStorage budget, and the export is the artifact worth keeping. */
+  const posterImages = {};   // chord -> dataURL (session only)
+
+  function viewPoster() {
+    const groups = MM.CHORD_GROUPS.filter(g => state.posterGroups.includes(g.id));
+    const filled = Object.keys(posterImages).length;
+    const total = groups.reduce((n, g) => n + g.chords.length, 0);
+    return `<div class="page">
+      ${pageHead('הרכבת פוסטר', 'תמונה לכל אקורד — כאן הן הופכות לגיליון אחד')}
+      <div class="panel">
+        <div class="panel-title">איך זה עובד</div>
+        <div class="panel-desc" style="margin-bottom:14px">
+          מייצרים תמונה לכל אקורד בכלי החיצוני (פרומפט לכל אקורד במסך ספריית האקורדים),
+          גוררים אותן לתאים כאן, ומורידים את הפוסטר המוכן. שם האקורד והדיאגרמה נצרבים
+          על כל תא — הם המקור לדיוק.</div>
+        <div class="chips">
+          ${MM.CHORD_GROUPS.filter(g => ['major','minor','seventh','sus'].includes(g.id)).map(g =>
+            `<button class="chip ${state.posterGroups.includes(g.id) ? 'active' : ''}" data-pgroup="${g.id}">${esc(g.he)}</button>`).join('')}
+          <span class="pill" style="margin-inline-start:auto">${filled}/${total} תאים</span>
+        </div>
+        <div style="display:flex;gap:10px;margin-top:14px;flex-wrap:wrap">
+          <button class="btn" data-action="poster-bulk">בחר תמונות בכמות</button>
+          <button class="btn btn-primary" data-action="poster-export" ${filled ? '' : 'disabled'}>הורד פוסטר PNG</button>
+          <button class="btn btn-ghost" data-action="poster-clear" ${filled ? '' : 'disabled'}>נקה</button>
+        </div>
+        <div class="hint" style="margin-top:8px">בבחירה בכמות: מיין את הקבצים לפי שם והם ישובצו לפי הסדר.</div>
+      </div>
+      ${groups.map(g => `
+        <div class="section-head"><div class="section-title">${esc(g.he)}</div></div>
+        <div style="direction:ltr;display:grid;gap:14px;grid-template-columns:repeat(auto-fill,minmax(150px,1fr))">
+          ${g.chords.map(ch => `
+            <div class="poster-cell ${posterImages[ch] ? 'filled' : ''}" data-cell="${ch}">
+              ${posterImages[ch]
+                ? `<img src="${posterImages[ch]}" alt="">`
+                : `<div class="poster-empty">${PF.chordDiagramSVG(ch, 96)}</div>`}
+              <div class="poster-label">${ch}</div>
+            </div>`).join('')}
+        </div>`).join('')}
+    </div>`;
+  }
+
+  /** Render the assembled sheet to a canvas and download it. */
+  async function exportPoster() {
+    const groups = MM.CHORD_GROUPS.filter(g => state.posterGroups.includes(g.id));
+    const cols = 7, cellW = 300, cellH = 380, pad = 28, headH = 130, groupH = 46;
+    const rowsPerGroup = groups.map(g => Math.ceil(g.chords.length / cols));
+    const W = pad * 2 + cols * cellW + (cols - 1) * 12;
+    const H = headH + groups.reduce((h, g, i) => h + groupH + rowsPerGroup[i] * (cellH + 12), 0) + pad * 2;
+
+    const cv = document.createElement('canvas');
+    cv.width = W; cv.height = H;
+    const x = cv.getContext('2d');
+    x.fillStyle = '#07070a'; x.fillRect(0, 0, W, H);
+
+    x.textAlign = 'center';
+    x.fillStyle = '#f0f0f4';
+    x.font = '700 62px Heebo, sans-serif';
+    x.fillText('ALL GUITAR CHORDS', W / 2, 78);
+    x.fillStyle = '#c8a24a';
+    x.font = '600 22px Heebo, sans-serif';
+    x.fillText('FINGERS EXACTLY ON THE CHORD', W / 2, 110);
+
+    const svgToImg = svg => new Promise(res => {
+      // An SVG loaded through <img> is parsed standalone, so it needs the
+      // namespace declaration the inline-DOM version gets for free.
+      if (!/xmlns=/.test(svg)) svg = svg.replace('<svg ', '<svg xmlns="http://www.w3.org/2000/svg" ');
+      const img = new Image();
+      img.onload = () => res(img);
+      img.onerror = () => res(null);
+      img.src = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svg)));
+    });
+    const load = src => new Promise(res => {
+      const img = new Image(); img.onload = () => res(img); img.onerror = () => res(null); img.src = src;
+    });
+
+    let y = headH;
+    for (const g of groups) {
+      x.textAlign = 'left';
+      x.fillStyle = '#c8a24a';
+      x.font = '700 24px Heebo, sans-serif';
+      x.fillText(g.en || g.id.toUpperCase(), pad, y + 28);
+      y += groupH;
+
+      for (let i = 0; i < g.chords.length; i++) {
+        const ch = g.chords[i];
+        const cx = pad + (i % cols) * (cellW + 12);
+        const cy = y + Math.floor(i / cols) * (cellH + 12);
+
+        x.fillStyle = '#101014';
+        x.fillRect(cx, cy, cellW, cellH);
+        const src = posterImages[ch];
+        if (src) {
+          const img = await load(src);
+          if (img) {
+            // cover-fit
+            const s = Math.max(cellW / img.width, cellH / img.height);
+            const dw = img.width * s, dh = img.height * s;
+            x.save(); x.beginPath(); x.rect(cx, cy, cellW, cellH); x.clip();
+            x.drawImage(img, cx + (cellW - dw) / 2, cy + (cellH - dh) / 2, dw, dh);
+            x.restore();
+          }
+        }
+        // chord name
+        x.textAlign = 'left';
+        x.fillStyle = '#ffffff';
+        x.font = '700 26px Heebo, sans-serif';
+        x.fillText(ch, cx + 14, cy + 34);
+        // diagram, burned in bottom-right
+        const dImg = await svgToImg(PF.chordDiagramSVG(ch, 104));
+        if (dImg) {
+          const dw = 104, dh = 104 * 1.3;
+          x.fillStyle = 'rgba(0,0,0,.62)';
+          x.fillRect(cx + cellW - dw - 12, cy + cellH - dh - 12, dw, dh);
+          x.drawImage(dImg, cx + cellW - dw - 12, cy + cellH - dh - 12, dw, dh);
+        }
+        x.strokeStyle = 'rgba(255,255,255,.12)';
+        x.strokeRect(cx + .5, cy + .5, cellW - 1, cellH - 1);
+      }
+      y += rowsPerGroup[groups.indexOf(g)] * (cellH + 12);
+    }
+
+    x.textAlign = 'center';
+    x.fillStyle = 'rgba(255,255,255,.55)';
+    x.font = '500 18px Heebo, sans-serif';
+    x.fillText('FINGER NUMBERS:  1 = INDEX   2 = MIDDLE   3 = RING   4 = PINKY        ' +
+      '✕ = DO NOT PLAY STRING        o = OPEN STRING', W / 2, H - 26);
+
+    cv.toBlob(blob => {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = 'all-guitar-chords.png'; a.click();
+      URL.revokeObjectURL(url);
+      toast('הפוסטר הורד');
+    }, 'image/png');
+  }
+
   /* ---------------- lessons ---------------- */
   function viewLessons() {
     if (state.activeLesson) return viewLessonDetail(state.activeLesson);
@@ -502,7 +646,7 @@ python scripts/build_sync_map.py work/analysis.json --chords work/chords.json --
     if (state.route === 'stage') ensureStageTrack();
     const views = {
       home: viewHome, library: viewLibrary, stage: viewStage,
-      characters: viewCharacters, chords: viewChords,
+      characters: viewCharacters, chords: viewChords, poster: viewPoster,
       lessons: viewLessons, settings: viewSettings
     };
     $('#view').innerHTML = (views[state.route] || viewHome)();
@@ -1117,6 +1261,43 @@ python scripts/extract_chords.py work/audio.wav --beats work/analysis.json --out
       navigator.clipboard.writeText(ta.value).then(() => toast('התדריך הועתק'),
         () => { ta.removeAttribute('readonly'); ta.select(); document.execCommand('copy'); toast('הועתק'); });
       return;
+    }
+    if (a === 'poster-export') return exportPoster();
+    if (a === 'poster-clear') {
+      Object.keys(posterImages).forEach(k => delete posterImages[k]);
+      return render();
+    }
+    if (a === 'poster-bulk') {
+      const inp = document.createElement('input');
+      inp.type = 'file'; inp.accept = 'image/*'; inp.multiple = true;
+      inp.onchange = () => {
+        const files = [...inp.files].sort((x, y) => x.name.localeCompare(y.name, undefined, { numeric: true }));
+        const slots = MM.CHORD_GROUPS.filter(g => state.posterGroups.includes(g.id)).flatMap(g => g.chords);
+        let done = 0;
+        files.slice(0, slots.length).forEach((f, i) => {
+          loadPortrait(f, url => {
+            posterImages[slots[i]] = url;
+            if (++done === Math.min(files.length, slots.length)) { toast(done + ' תמונות שובצו'); render(); }
+          });
+        });
+      };
+      inp.click(); return;
+    }
+    const pg = e.target.closest('[data-pgroup]');
+    if (pg) {
+      const id = pg.dataset.pgroup;
+      state.posterGroups = state.posterGroups.includes(id)
+        ? state.posterGroups.filter(x => x !== id)
+        : state.posterGroups.concat(id);
+      return render();
+    }
+    const cell = e.target.closest('[data-cell]');
+    if (cell) {
+      const ch = cell.dataset.cell;
+      const inp = document.createElement('input');
+      inp.type = 'file'; inp.accept = 'image/*';
+      inp.onchange = () => { const f = inp.files[0]; if (f) loadPortrait(f, url => { posterImages[ch] = url; render(); }); };
+      inp.click(); return;
     }
     if (a === 'chord-poster') return chordPosterModal();
     if (a === 'copy-poster' || a === 'download-poster') {
