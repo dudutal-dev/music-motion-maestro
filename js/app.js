@@ -21,6 +21,7 @@
     currentTrackId: null,
     performer: null,
     stageChar: null,
+    stageMode: 'anim',
     lastBeatIndex: -1,
     activeLesson: null
   };
@@ -247,7 +248,13 @@
         </div>
         <div>
           <div class="side-panel" style="margin-bottom:16px">
-            <h3>כלי נגינה</h3>
+            <h3>תצוגה</h3>
+            <div class="chips">
+              <button class="chip ${state.stageMode !== 'hero' ? 'active' : ''}" data-mode="anim">🎬 אנימציה</button>
+              <button class="chip ${state.stageMode === 'hero' ? 'active' : ''}" data-mode="hero"
+                ${state.stageChar && state.stageChar.portrait ? '' : 'disabled title="צרף תמונה לדמות כדי להפעיל"'}>🖼️ דמות ריאליסטית</button>
+            </div>
+            <h3 style="margin-top:16px">כלי נגינה</h3>
             <div class="chips">
               <button class="chip ${(!state.stageChar || state.stageChar.instrument !== 'piano') ? 'active' : ''}" data-inst="guitar">🎸 גיטרה</button>
               <button class="chip ${state.stageChar && state.stageChar.instrument === 'piano' ? 'active' : ''}" data-inst="piano">🎹 פסנתר</button>
@@ -281,16 +288,22 @@
       ${cs.length ? `<div class="grid" style="grid-template-columns:repeat(auto-fill,minmax(260px,1fr))">
         ${cs.map(c => {
           const st = CH.STYLES.find(s => s.id === c.style);
-          return `<div class="lesson-card" data-char="${c.id}">
-            <div class="lesson-num">${c.instrument === 'piano' ? '🎹 פסנתר' : '🎸 גיטרה'}</div>
-            <h4>${esc(c.name)}</h4>
-            <p>${esc((c.description || '').slice(0, 110))}${(c.description || '').length > 110 ? '…' : ''}</p>
-            <div style="margin-top:12px;display:flex;gap:7px;flex-wrap:wrap">
-              <span class="pill">${esc(st ? st.he : '—')}</span>
-            </div>
-            <div style="margin-top:14px;display:flex;gap:8px">
-              <button class="btn btn-sm" data-action="master-prompt" data-id="${c.id}">פרומפט-מאסטר</button>
-              <button class="btn btn-sm btn-ghost" data-action="edit-char" data-id="${c.id}">ערוך</button>
+          return `<div class="lesson-card" data-char="${c.id}" style="padding:0;overflow:hidden">
+            ${c.portrait
+              ? `<img src="${c.portrait}" alt="" style="width:100%;aspect-ratio:4/5;object-fit:cover;display:block">`
+              : `<div style="aspect-ratio:4/5;display:grid;place-items:center;background:var(--panel-2);font-size:40px;opacity:.4">${c.instrument === 'piano' ? '🎹' : '🎸'}</div>`}
+            <div style="padding:18px">
+              <div class="lesson-num">${c.instrument === 'piano' ? '🎹 פסנתר' : '🎸 גיטרה'}</div>
+              <h4>${esc(c.name)}</h4>
+              <p>${esc((c.description || '').slice(0, 90))}${(c.description || '').length > 90 ? '…' : ''}</p>
+              <div style="margin-top:12px;display:flex;gap:7px;flex-wrap:wrap">
+                <span class="pill${st && st.photoreal ? ' on' : ''}">${esc(st ? st.he : '—')}</span>
+              </div>
+              <div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap">
+                <button class="btn btn-sm" data-action="master-prompt" data-id="${c.id}">פרומפט-מאסטר</button>
+                <button class="btn btn-sm" data-action="char-brief" data-id="${c.id}">תדריך</button>
+                <button class="btn btn-sm btn-ghost" data-action="edit-char" data-id="${c.id}">ערוך</button>
+              </div>
             </div>
           </div>`;
         }).join('')}</div>`
@@ -427,14 +440,32 @@ python scripts/build_sync_map.py work/analysis.json --chords work/chords.json --
     const host = $('#stage');
     const t = state.currentTrackId ? Store.getTrack(state.currentTrackId) : null;
     if (!host || !t || !t.analysis || !t.analysis.bpm) { state.performer = null; return; }
-    const holder = document.createElement('div');
     const hud = host.querySelector('.stage-hud');
     host.innerHTML = '';
-    host.appendChild(holder);
+
+    const heroMode = state.stageMode === 'hero' && state.stageChar && state.stageChar.portrait;
+    if (heroMode) {
+      // The realistic render is the visual; the fingering stays exact in the
+      // overlay, so you get the photoreal look without losing the accuracy.
+      state.performer = null;
+      const wrap = document.createElement('div');
+      wrap.className = 'hero-stage';
+      wrap.innerHTML =
+        `<img id="hero-img" src="${state.stageChar.portrait}" alt="">
+         <div class="hero-overlay">
+           <div class="hero-chord" id="hero-chord">—</div>
+           <div class="hero-hand" id="hero-hand"></div>
+           <div id="hero-diagram"></div>
+         </div>`;
+      host.appendChild(wrap);
+    } else {
+      const holder = document.createElement('div');
+      host.appendChild(holder);
+      state.performer = PF.create(holder);
+      state.performer.setInstrument(
+        state.stageChar && state.stageChar.instrument === 'piano' ? 'piano' : 'guitar');
+    }
     if (hud) host.appendChild(hud);
-    state.performer = PF.create(holder);
-    const inst = state.stageChar && state.stageChar.instrument === 'piano' ? 'piano' : 'guitar';
-    state.performer.setInstrument(inst);
 
     const sel = $('#stage-char');
     if (sel) sel.addEventListener('change', () => {
@@ -442,6 +473,13 @@ python scripts/build_sync_map.py work/analysis.json --chords work/chords.json --
       render();
     });
     renderChordList(t);
+
+    // Prime the readouts now. They are otherwise only refreshed by the player
+    // loop, which leaves the panel blank until playback starts.
+    lastReadoutChord = null;
+    const at = A.chordAt(t.analysis, P.time() || 0);
+    const first = at || (t.analysis.chords && t.analysis.chords[0]);
+    updateHandReadout(first ? first.chord : null);
   }
 
   function renderChordList(t) {
@@ -466,6 +504,18 @@ python scripts/build_sync_map.py work/analysis.json --chords work/chords.json --
 
     if (state.performer) {
       state.performer.update({ chord, beat, playing: P.playing, energy });
+    } else if (state.stageMode === 'hero') {
+      // A still render can't fret a chord, but it can breathe with the music:
+      // a subtle push on each beat keeps the hero alive without faking playing.
+      const img = $('#hero-img');
+      if (img) {
+        const pulse = P.playing ? Math.max(0, 1 - beat.phase * 3.2) * (beat.isDown ? 1 : .55) : 0;
+        const sway = P.playing ? Math.sin((beat.index % 8 + beat.phase) / 8 * Math.PI * 2) : 0;
+        img.style.transform =
+          `scale(${(1.015 + pulse * 0.02 * energy).toFixed(4)}) translateX(${(sway * 6 * energy).toFixed(2)}px)`;
+      }
+      const hc = $('#hero-chord');
+      if (hc && hc.textContent !== (chord || '—')) hc.textContent = chord || '—';
     }
 
     // beat pulse in the player bar
@@ -505,16 +555,26 @@ python scripts/build_sync_map.py work/analysis.json --chords work/chords.json --
     const box = $('#hand-readout'), dia = $('#chord-diagram');
     if (!box) return;
     if (!chord) { box.textContent = 'אין אקורד בנקודה הזו.'; if (dia) dia.innerHTML = ''; return; }
-    const isPiano = state.performer && state.performer.instrument === 'piano';
+    const isPiano = state.performer
+      ? state.performer.instrument === 'piano'
+      : !!(state.stageChar && state.stageChar.instrument === 'piano');
+    let handText = '', diagram = '';
     if (isPiano) {
       const v = MM.pianoVoicing(chord, 4);
-      box.innerHTML = v ? `<b>${chord}</b><br>${esc(v.placementHe)}` : `<b>${chord}</b>`;
-      if (dia) dia.innerHTML = PF.keyboardDiagramSVG(chord, 270);
+      handText = v ? v.placementHe : '';
+      diagram = PF.keyboardDiagramSVG(chord, 270);
     } else {
       const f = MM.guitarFingering(chord);
-      box.innerHTML = f ? `<b>${chord}</b><br>${esc(f.placementHe)}` : `<b>${chord}</b> — אין צורת אקורד בספרייה`;
-      if (dia) dia.innerHTML = f ? PF.chordDiagramSVG(chord, 150) : '';
+      handText = f ? f.placementHe : 'אין צורת אקורד בספרייה';
+      diagram = f ? PF.chordDiagramSVG(chord, 150) : '';
     }
+    box.innerHTML = `<b>${esc(chord)}</b><br>${esc(handText)}`;
+    if (dia) dia.innerHTML = diagram;
+    // hero mode shows the same fingering as an overlay on the render
+    const hh = $('#hero-hand'), hd = $('#hero-diagram'), hc = $('#hero-chord');
+    if (hh) hh.textContent = handText;
+    if (hd) hd.innerHTML = diagram;
+    if (hc) hc.textContent = chord;
     document.querySelectorAll('.next-chord').forEach(n =>
       n.classList.toggle('current', n.dataset.c === chord));
   }
@@ -729,50 +789,112 @@ python scripts/extract_chords.py work/audio.wav --beats work/analysis.json --out
     render();
   }
 
+  const opts = (arr, sel) => arr.map(o =>
+    `<option value="${o.id}" ${sel === o.id ? 'selected' : ''}>${esc(o.he)}</option>`).join('');
+
   function characterModal(id) {
-    const c = id ? Store.getCharacter(id) : null;
-    modal(c ? 'עריכת דמות' : 'דמות חדשה', `
+    const c = id ? Store.getCharacter(id) : {};
+    modal(id ? 'עריכת דמות' : 'דמות חדשה', `
       <div class="form-grid">
         <div class="field"><label>שם הדמות</label>
-          <input id="c-name" value="${esc(c ? c.name : '')}" placeholder="למשל: נעם, הגיטריסט" autofocus></div>
+          <input id="c-name" value="${esc(c.name || '')}" placeholder="למשל: נעם, הגיטריסט" autofocus></div>
         <div class="field"><label>כלי נגינה</label>
           <select id="c-inst">
-            <option value="guitar" ${c && c.instrument === 'guitar' ? 'selected' : ''}>🎸 גיטרה</option>
-            <option value="piano" ${c && c.instrument === 'piano' ? 'selected' : ''}>🎹 פסנתר</option>
+            <option value="guitar" ${c.instrument === 'guitar' ? 'selected' : ''}>🎸 גיטרה</option>
+            <option value="piano" ${c.instrument === 'piano' ? 'selected' : ''}>🎹 פסנתר</option>
           </select></div>
-        <div class="field" style="grid-column:1/-1"><label>תיאור הדמות (ננעל וחוזר בכל פאנל)</label>
-          <textarea id="c-desc" placeholder="גיל, מבנה גוף, שיער, לבוש, פרט חתימה — באנגלית עובד הכי טוב עם כלי הייצור">${esc(c ? c.description : '')}</textarea>
-          <div class="hint">לדוגמה: young musician in her 20s, tousled auburn hair, oversized denim jacket, silver ring on the index finger</div></div>
         <div class="field"><label>סגנון</label>
-          <select id="c-style">${CH.STYLES.map(s =>
-            `<option value="${s.id}" ${c && c.style === s.id ? 'selected' : ''}>${s.he}</option>`).join('')}</select></div>
+          <select id="c-style">${opts(CH.STYLES, c.style)}</select>
+          <div class="hint">סגנונות "ריאליסטי" פותחים שדות פוטוריאליזם נוספים.</div></div>
+        <div class="field"><label>גיל / מראה כללי</label>
+          <input id="c-age" value="${esc(c.age || '')}" placeholder="a man in his mid-20s"></div>
+
+        <div class="field" style="grid-column:1/-1"><label>זהות הדמות (ננעלת וחוזרת מילה במילה)</label>
+          <textarea id="c-desc" placeholder="פנים, שיער, מבנה גוף, פרט חתימה — באנגלית עובד הכי טוב">${esc(c.description || '')}</textarea>
+          <div class="hint">לדוגמה: short dark curly hair, light stubble, warm olive skin, calm confident gaze, thin red string bracelet on the right wrist</div></div>
+        <div class="field" style="grid-column:1/-1"><label>לבוש</label>
+          <input id="c-wardrobe" value="${esc(c.wardrobe || '')}" placeholder="cream ribbed knit polo shirt, off-white trousers"></div>
+        <div class="field" style="grid-column:1/-1"><label>עיצוב הכלי</label>
+          <input id="c-instdetail" value="${esc(c.instrumentDetail || '')}" placeholder="custom electric guitar, deep teal metallic finish, bioluminescent inlays, abalone shell details">
+          <div class="hint">כמה שיותר ספציפי — הכלי הוא חצי מהקומפוזיציה.</div></div>
+
+        <div id="photoreal-fields" style="display:contents">
+          <div class="field"><label>מצלמה / עדשה</label><select id="c-camera">${opts(CH.CAMERAS, c.camera)}</select></div>
+          <div class="field"><label>תאורה</label><select id="c-lighting">${opts(CH.LIGHTING, c.lighting)}</select></div>
+          <div class="field"><label>רקע</label><select id="c-backdrop">${opts(CH.BACKDROPS, c.backdrop)}</select></div>
+          <div class="field"><label>מרקם עור</label><select id="c-skin">${opts(CH.SKIN, c.skin)}</select></div>
+        </div>
+
         <div class="field"><label>פלטת צבעים</label>
           <select id="c-palette">${CH.PALETTES.map(p =>
-            `<option value="${esc(p.v)}" ${c && c.palette === p.v ? 'selected' : ''}>${p.he}</option>`).join('')}</select></div>
-        <div class="field"><label>פרטי הכלי</label>
-          <input id="c-instdetail" value="${esc(c ? c.instrumentDetail || '' : '')}" placeholder="sunburst dreadnought / black grand piano"></div>
-        <div class="field"><label>תאורה</label>
-          <input id="c-light" value="${esc(c ? c.lighting || '' : '')}" placeholder="soft key with a cold rim light"></div>
-        <div class="field" style="grid-column:1/-1"><label>עולם / סביבה</label>
-          <input id="c-world" value="${esc(c ? c.world || '' : '')}" placeholder="rain-slick neon street at night / warm wooden studio"></div>
+            `<option value="${esc(p.v)}" ${c.palette === p.v ? 'selected' : ''}>${p.he}</option>`).join('')}</select></div>
+        <div class="field"><label>עולם / סביבה (עוקף את הרקע)</label>
+          <input id="c-world" value="${esc(c.world || '')}" placeholder="השאר ריק כדי להשתמש ברקע שנבחר"></div>
+
+        <div class="field" style="grid-column:1/-1"><label>תמונת הדמות (hero keyframe)</label>
+          <div style="display:flex;gap:14px;align-items:center;flex-wrap:wrap">
+            <img id="c-portrait-prev" src="${c.portrait || ''}"
+              style="width:96px;height:120px;object-fit:cover;border-radius:10px;border:1px solid var(--line);background:var(--panel-2);${c.portrait ? '' : 'display:none'}">
+            <button class="btn btn-sm" data-action="pick-portrait">בחר תמונה</button>
+            ${c.portrait ? '<button class="btn btn-sm btn-ghost" data-action="clear-portrait" style="color:var(--bad)">הסר</button>' : ''}
+          </div>
+          <div class="hint">אחרי שיצרת את ה-hero בכלי חיצוני — צרף אותו כאן. הוא יופיע על הדמות ויוכל לעלות לבמה.</div></div>
       </div>`,
       `<button class="btn btn-primary" data-action="save-char" ${id ? `data-id="${id}"` : ''}>שמור דמות</button>
+       ${id ? `<button class="btn" data-action="char-brief" data-id="${id}">תדריך דמות</button>` : ''}
        ${id ? `<button class="btn btn-ghost" data-action="del-char" data-id="${id}" style="color:var(--bad)">מחק</button>` : ''}
        <button class="btn btn-ghost" data-action="close-modal">ביטול</button>`);
+
+    pendingPortrait = c.portrait || null;
+    const styleSel = $('#c-style');
+    const syncPhotoreal = () => {
+      const on = CH.isPhotoreal({ style: styleSel.value });
+      $('#photoreal-fields').style.display = on ? 'contents' : 'none';
+    };
+    styleSel.addEventListener('change', syncPhotoreal);
+    syncPhotoreal();
+  }
+
+  let pendingPortrait = null;
+
+  /** Downscale before storing: localStorage is ~5MB and a raw render blows it. */
+  function loadPortrait(file, cb) {
+    const r = new FileReader();
+    r.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        const max = 720;
+        const k = Math.min(1, max / Math.max(img.width, img.height));
+        const cv = document.createElement('canvas');
+        cv.width = Math.round(img.width * k); cv.height = Math.round(img.height * k);
+        cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
+        cb(cv.toDataURL('image/jpeg', 0.82));
+      };
+      img.onerror = () => toast('לא הצלחתי לקרוא את התמונה', true);
+      img.src = r.result;
+    };
+    r.readAsDataURL(file);
   }
 
   function saveCharacter(id) {
     const data = {
       name: $('#c-name').value.trim() || 'דמות ללא שם',
       instrument: $('#c-inst').value,
-      description: $('#c-desc').value.trim(),
       style: $('#c-style').value,
-      palette: $('#c-palette').value,
+      age: $('#c-age').value.trim(),
+      description: $('#c-desc').value.trim(),
+      wardrobe: $('#c-wardrobe').value.trim(),
       instrumentDetail: $('#c-instdetail').value.trim(),
-      lighting: $('#c-light').value.trim(),
-      world: $('#c-world').value.trim()
+      camera: $('#c-camera').value,
+      lighting: $('#c-lighting').value,
+      backdrop: $('#c-backdrop').value,
+      skin: $('#c-skin').value,
+      palette: $('#c-palette').value,
+      world: $('#c-world').value.trim(),
+      portrait: pendingPortrait
     };
     if (id) Store.updateCharacter(id, data); else Store.addCharacter(data);
+    if (!Store.save()) return toast('אין מקום בדפדפן — הסר תמונה או מחק דמות', true);
     closeModal(); toast('הדמות נשמרה'); render();
   }
 
@@ -836,6 +958,43 @@ python scripts/extract_chords.py work/audio.wav --beats work/analysis.json --out
     if (a === 'save-char') return saveCharacter(act.dataset.id);
     if (a === 'del-char') {
       if (confirm('למחוק את הדמות?')) { Store.removeCharacter(act.dataset.id); closeModal(); render(); }
+      return;
+    }
+    if (a === 'pick-portrait') {
+      const inp = document.createElement('input');
+      inp.type = 'file'; inp.accept = 'image/*';
+      inp.onchange = () => {
+        const f = inp.files[0]; if (!f) return;
+        loadPortrait(f, dataUrl => {
+          pendingPortrait = dataUrl;
+          const prev = $('#c-portrait-prev');
+          if (prev) { prev.src = dataUrl; prev.style.display = ''; }
+          toast('התמונה צורפה');
+        });
+      };
+      inp.click(); return;
+    }
+    if (a === 'clear-portrait') {
+      pendingPortrait = null;
+      const prev = $('#c-portrait-prev');
+      if (prev) { prev.src = ''; prev.style.display = 'none'; }
+      act.remove(); return;
+    }
+    if (a === 'char-brief') {
+      const c = Store.getCharacter(act.dataset.id);
+      if (!c) return;
+      const text = CH.characterBrief(c);
+      modal(`תדריך דמות — ${esc(c.name)}`, `
+        <div class="field"><label>העתק לכלי היצירה (GPT / Gemini / Midjourney)</label>
+          <textarea id="brief-text" readonly style="min-height:420px">${esc(text)}</textarea></div>`,
+        `<button class="btn btn-primary" data-action="copy-brief">העתק</button>
+         <button class="btn btn-ghost" data-action="close-modal">סגור</button>`);
+      return;
+    }
+    if (a === 'copy-brief') {
+      const ta = $('#brief-text');
+      navigator.clipboard.writeText(ta.value).then(() => toast('התדריך הועתק'),
+        () => { ta.removeAttribute('readonly'); ta.select(); document.execCommand('copy'); toast('הועתק'); });
       return;
     }
     if (a === 'master-prompt') return masterPromptModal(act.dataset.id);
@@ -916,6 +1075,14 @@ python scripts/extract_chords.py work/audio.wav --beats work/analysis.json --out
       if (LS.Audio.running) { LS.Audio.stopMetronome(); act.textContent = '▶ הפעל'; }
       else { LS.Audio.startMetronome(+$('#metro-bpm').value, 4); act.textContent = '■ עצור'; }
       return;
+    }
+
+    // stage display mode
+    const mode = e.target.closest('[data-mode]');
+    if (mode && !mode.disabled) {
+      state.stageMode = mode.dataset.mode;
+      lastReadoutChord = null;
+      return render();
     }
 
     // instrument switch on stage

@@ -183,9 +183,11 @@
     } catch (e) { return defaults(); }
   }
   let state = load();
+  /** Returns false when the browser refuses the write (quota) so callers can
+   *  tell the user instead of silently losing their work. */
   function save() {
-    try { localStorage.setItem(KEY, JSON.stringify(state)); }
-    catch (e) { console.warn('save failed', e); }
+    try { localStorage.setItem(KEY, JSON.stringify(state)); return true; }
+    catch (e) { console.warn('save failed', e); return false; }
   }
   const uid = () => 'x' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
 
