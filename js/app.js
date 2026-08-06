@@ -4,7 +4,8 @@
 (function (global) {
   'use strict';
   const MM = global.MM, A = global.Analysis, P = global.Player,
-    PF = global.Performer, CH = global.Characters, LS = global.Lessons;
+    PF = global.Performer, CH = global.Characters, LS = global.Lessons,
+    AA = global.AudioAnalysis;
   const Store = MM.Store;
 
   const $ = s => document.querySelector(s);
@@ -912,6 +913,31 @@ python scripts/build_sync_map.py work/analysis.json --chords work/chords.json --
     setTimeout(() => analyzeModal(t.id), 260);
   }
 
+  let autoAnalysis = null;
+
+  /** Show what the analyzer found, and be honest about how sure it is. */
+  function renderAutoResult(a, filename) {
+    const prog = A.progressionOf(a);
+    const conf = a.confidence || {};
+    const badge = v => v >= .7 ? 'on' : '';
+    const note = v => v >= .7 ? 'ביטחון גבוה' : v >= .45 ? 'ביטחון בינוני — כדאי לאמת' : 'ביטחון נמוך — בדוק ידנית';
+    return `
+      <div class="hand-readout" style="margin-bottom:12px">
+        <b>${esc(filename)}</b><br>${esc(A.summaryLine(a))}
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+        <span class="pill ${badge(conf.tempo)}">קצב ${Math.round(a.bpm)} BPM · ${esc(note(conf.tempo || 0))}</span>
+        <span class="pill ${badge(conf.key)}">סולם ${esc(a.key.tonic)}${a.key.mode === 'minor' ? 'm' : ''} · ${esc(note(conf.key || 0))}</span>
+        <span class="pill">${a.beatTimes.length} ביטים</span>
+        <span class="pill">${a.sections.length} סקשנים</span>
+      </div>
+      ${prog.length ? `<div class="next-chords">${prog.slice(0, 20).map(c =>
+        `<span class="next-chord">${esc(c)}</span>`).join('')}</div>` : ''}
+      <div class="hint" style="margin-top:10px">
+        זיהוי אקורדים הוא הערכה — במיקס צפוף הוא פחות מדויק. אפשר לתקן ידנית בלשונית "ניתוח מונחה".
+      </div>`;
+  }
+
   function analyzeModal(id) {
     const t = Store.getTrack(id);
     if (!t) return;
@@ -920,10 +946,23 @@ python scripts/build_sync_map.py work/analysis.json --chords work/chords.json --
     const dur = a.duration || Math.round(P.duration) || 0;
     modal(`ניתוח — ${esc(t.title)}`, `
       <div class="tabs">
-        <button class="tab active" data-tab="assist">ניתוח מונחה</button>
+        <button class="tab active" data-tab="auto">🎧 נתח קובץ אודיו</button>
+        <button class="tab" data-tab="assist">ניתוח מונחה</button>
         <button class="tab" data-tab="json">ייבוא מהסקיל</button>
       </div>
-      <div id="tab-assist">
+      <div id="tab-auto">
+        <div class="panel-desc" style="margin-bottom:16px">
+          העלה קובץ אודיו של השיר (mp3 / wav / m4a) והאפליקציה תוציא לבד
+          <b>BPM, רשת ביטים, סולם, אקורדים ומבנה</b> — בלי פייתון ובלי הזנה ידנית.
+          הניתוח רץ מקומית בדפדפן; הקובץ לא נשלח לשום מקום.
+        </div>
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+          <button class="btn btn-primary" data-action="pick-audio">בחר קובץ אודיו</button>
+          <span id="auto-status" style="font-size:13px;color:var(--text-3)"></span>
+        </div>
+        <div id="auto-result" style="margin-top:16px"></div>
+      </div>
+      <div id="tab-assist" style="display:none">
         <div class="form-grid">
           <div class="field"><label>BPM (קצב)</label>
             <div style="display:flex;gap:8px">
@@ -965,14 +1004,35 @@ python scripts/extract_chords.py work/audio.wav --beats work/analysis.json --out
       `<button class="btn btn-primary" data-action="save-analysis" data-id="${id}">שמור ניתוח</button>
        <button class="btn btn-ghost" data-action="close-modal">ביטול</button>`);
 
+    autoAnalysis = null;
     const tapper = A.TapTempo();
     const back = $('.modal-back');
     back.addEventListener('click', e => {
       const tab = e.target.closest('[data-tab]');
       if (tab) {
         back.querySelectorAll('.tab').forEach(x => x.classList.toggle('active', x === tab));
-        $('#tab-assist').style.display = tab.dataset.tab === 'assist' ? '' : 'none';
-        $('#tab-json').style.display = tab.dataset.tab === 'json' ? '' : 'none';
+        for (const t of ['auto', 'assist', 'json'])
+          $('#tab-' + t).style.display = tab.dataset.tab === t ? '' : 'none';
+      }
+      if (e.target.closest('[data-action="pick-audio"]')) {
+        const inp = document.createElement('input');
+        inp.type = 'file'; inp.accept = 'audio/*';
+        inp.onchange = async () => {
+          const f = inp.files[0]; if (!f) return;
+          const status = $('#auto-status'), out = $('#auto-result');
+          out.innerHTML = '';
+          try {
+            const a = await AA.analyzeFile(f, m => { status.textContent = m; });
+            autoAnalysis = a;
+            status.textContent = '';
+            out.innerHTML = renderAutoResult(a, f.name);
+          } catch (err) {
+            status.textContent = '';
+            out.innerHTML = `<div class="hand-readout" style="color:var(--bad)">${esc(err.message || 'הניתוח נכשל')}</div>`;
+          }
+        };
+        inp.click();
+        return;
       }
       if (e.target.closest('[data-action="tap"]')) {
         const bpm = tapper.tap();
@@ -988,9 +1048,13 @@ python scripts/extract_chords.py work/audio.wav --beats work/analysis.json --out
     if (!t) return;
     const jsonText = ($('#a-json') && $('#a-json').value || '').trim();
     const jsonVisible = $('#tab-json').style.display !== 'none';
+    const autoVisible = $('#tab-auto') && $('#tab-auto').style.display !== 'none';
     let analysis;
     try {
-      if (jsonVisible && jsonText) {
+      if (autoVisible) {
+        if (!autoAnalysis) return toast('נתח קודם קובץ אודיו, או עבור ללשונית אחרת', true);
+        analysis = autoAnalysis;
+      } else if (jsonVisible && jsonText) {
         analysis = A.fromSkillJson(JSON.parse(jsonText), P.duration);
       } else {
         const bpm = parseFloat($('#a-bpm').value);
