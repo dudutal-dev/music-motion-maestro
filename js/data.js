@@ -201,6 +201,54 @@
   const fingeringSentence = (name, instrument) =>
     instrument === 'piano' ? pianoVoicingSentence(name) : guitarFingeringSentence(name);
 
+  /* ---------- visual translation ----------
+     "middle finger on string 5 at fret 2" is musician notation. An image model
+     has no visual concept of a numbered string or fret — those are symbols. It
+     does understand where the hand sits relative to the inlay dots, how many
+     fingertips are visible on the fretboard face, and where the thumb is. This
+     converts the fingering into that language, which is what a generator can
+     actually act on. */
+  function neckLandmark(fret) {
+    if (fret <= 2) return 'right up against the nut, in the first two fret spaces';
+    if (fret === 3) return 'at the first inlay dot marker';
+    if (fret === 4) return 'just past the first inlay dot';
+    if (fret === 5) return 'at the second inlay dot marker';
+    if (fret <= 6) return 'just past the second inlay dot';
+    if (fret === 7) return 'at the third inlay dot marker';
+    if (fret <= 8) return 'just past the third inlay dot';
+    if (fret === 9) return 'at the fourth inlay dot marker';
+    if (fret < 12) return 'between the fourth inlay dot and the double dots';
+    if (fret === 12) return 'at the double inlay dots, where the neck meets the body';
+    return 'high up the neck, past the double inlay dots';
+  }
+
+  function visualFingering(name, instrument) {
+    if (instrument === 'piano') {
+      const v = pianoVoicing(name, 4);
+      if (!v) return null;
+      return `${v.keys.length} fingertips of the right hand press down on ${v.keys.length} separate keys, ` +
+        'and those keys sit visibly lower than the keys beside them; the left hand presses a single low key; ' +
+        'fingers are curved as if holding a small ball, wrists level with the forearms, not collapsed';
+    }
+    const f = guitarFingering(name);
+    if (!f) return null;
+    const parts = [];
+    const pressedCount = f.shape.filter(x => typeof x === 'number' && x > 0).length;
+    if (f.barre) {
+      const extra = f.shape.filter((x, i) => typeof x === 'number' && x > 0 && x !== f.baseFret).length;
+      parts.push(`the index finger is laid completely flat across all six strings ${neckLandmark(f.baseFret)}`);
+      if (extra) parts.push(`${extra} more arched fingertips press the strings one to two fret spaces above it, each on a different string`);
+    } else {
+      parts.push(`the fretting hand is ${neckLandmark(f.baseFret)}`);
+      parts.push(`${pressedCount} arched fingertip${pressedCount > 1 ? 's' : ''} press${pressedCount === 1 ? 'es' : ''} ` +
+        'straight down onto the face of the fretboard, each on a different string, all of them clearly visible from the front');
+    }
+    parts.push('the thumb is behind the neck and hidden from view, not hooked over the top edge');
+    const open = f.shape.filter(x => x === 0).length;
+    if (open) parts.push(`${open} string${open > 1 ? 's are' : ' is'} left ringing open, untouched by any finger`);
+    return parts.join('; ');
+  }
+
   function romanNumeral(chord, key) {
     if (!key || !key.tonic) return '';
     const p = parseChord(chord);
@@ -290,6 +338,7 @@
     PITCHES, PITCHES_HE, STRINGS, GUITAR, CHORD_NAMES, CHORD_GROUPS,
     parseChord, guitarFingering, pianoVoicing, romanNumeral,
     guitarFingeringSentence, pianoVoicingSentence, fingeringSentence,
+    visualFingering, neckLandmark,
     parseVideoId, thumbUrl, Store
   };
 })(window);

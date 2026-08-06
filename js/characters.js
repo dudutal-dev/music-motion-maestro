@@ -196,7 +196,16 @@
   const NEGATIVE_BASE = [
     'extra fingers', 'missing fingers', 'fused fingers', 'malformed hands',
     'six fingers', 'distorted anatomy', 'floating hands',
-    'hand not touching the instrument', 'incorrect chord shape',
+    'hand not touching the instrument',
+    // These are the failures real generations actually came back with: the hand
+    // grips the neck with no shape, the thumb wraps over the top, or it drifts
+    // onto the headstock where nothing can be fretted. Abstract wording like
+    // "incorrect chord shape" does not move a model; naming the wrong picture does.
+    'hand gripping the neck like a baseball bat',
+    'thumb hooked over the top edge of the neck',
+    'fretting hand up on the headstock or over the tuning pegs',
+    'fingers wrapped around the back of the neck instead of pressing the strings',
+    'fingertips not touching the fretboard',
     'extra strings', 'warped instrument neck', 'melting geometry',
     'plastic skin', 'waxy skin', 'over-smoothed face', 'uncanny dead eyes',
     'blurry', 'low resolution', 'watermark', 'text', 'cartoon', 'illustration'
@@ -451,12 +460,13 @@
   function panelPrompt(character, panel) {
     // Name the chord, then give the exact finger placement. The precise
     // version beats the generic one — it leaves nothing for the model to guess.
-    const exact = panel.chord ? MM.fingeringSentence(panel.chord, character.instrument) : null;
+    const visual = panel.chord ? MM.visualFingering(panel.chord, character.instrument) : null;
     const action = `playing the ${instrumentBlock(character)}` +
-      (panel.chord ? `, forming the ${panel.chord} chord — ${exact || panel.hand || ''}` : '') +
+      (panel.chord ? `, forming the ${panel.chord} chord — ${visual || panel.hand || ''}` : '') +
       `, ${panel.movement}`;
     return stack(character, {
-      framing: panel.type.frame, action,
+      framing: panel.chord ? `${panel.type.frame}, ${HAND_FOCUS}` : panel.type.frame,
+      action,
       energy: panel.label,
       intensity: INTENSITY[panel.label] || INTENSITY.mid
     }) + '\n\n' + negativeLine(character);
@@ -591,6 +601,12 @@
      ============================================================ */
   const firstClause = s => String(s || '').split(',')[0].trim();
 
+  /* A hand that occupies forty pixels will be rendered like one. Whenever a
+     chord is named, the composition has to give the hand enough room for the
+     fingertips to be countable — otherwise the fingering is decoration. */
+  const HAND_FOCUS = 'the fretting hand is a focal point of the composition, close enough to ' +
+    'the camera that the individual fingertips can be counted, held in sharp focus';
+
   /** A few words instead of a full finger-by-finger sentence. */
   function shortHand(chord, instrument) {
     if (!chord) return '';
@@ -629,6 +645,7 @@
     }
     if (label === 'high') bits.push('sweat-damp hair, caught mid-motion');
     if (panel) bits.push(firstClause(panel.type.frame));
+    if (panel && panel.chord) bits.push('fretting hand close to camera and sharp, fingertips countable');
     if (scene && scene.v) bits.push(firstClause(scene.v));
     bits.push(firstClause(pick(LIGHTING, c.lighting).v));
     bits.push(firstClause(style.anchor));
@@ -658,13 +675,21 @@
     L.push(instrumentBlock(c));
     L.push('');
     if (panel && panel.chord) {
+      const visual = MM.visualFingering(panel.chord, c.instrument);
       const exact = MM.fingeringSentence(panel.chord, c.instrument);
       // A, E and F are spoken as vowel sounds ("an A minor", not "a A minor")
       const art = /^[AEF]/.test(panel.chord) ? 'an' : 'a';
-      L.push(`ACTION — playing ${art} ${panel.chord} chord. The hand position is a requirement, not a suggestion:`);
-      L.push(exact || '');
-      if (guitar) L.push('The strumming hand is over the body of the instrument, mid-stroke across the strings.');
-      L.push('The fingertips press the strings directly behind the fret wire, not in the middle of the fret space.');
+      L.push(`ACTION — playing ${art} ${panel.chord} chord. The hand is the point of this image, ` +
+        'so treat the next lines as requirements:');
+      // The visual description leads. Fret and string numbers are symbols an
+      // image model cannot see; inlay dots and countable fingertips it can.
+      if (visual) L.push('- ' + visual + '.');
+      if (exact) L.push(`- The same shape in players' terms, for reference: ${exact}.`);
+      if (guitar) {
+        L.push('- The strumming hand is over the body of the instrument, mid-stroke across the strings.');
+        L.push('- Fingertips press just behind a fret wire, not in the middle of a fret space.');
+      }
+      L.push('- ' + HAND_FOCUS + '.');
     } else {
       L.push(`ACTION: holding the ${guitar ? 'guitar' : 'piano'}, both hands correctly and naturally placed on it.`);
     }
@@ -682,7 +707,8 @@
     L.push('MUST AVOID — check these before you finish:');
     L.push('- Hands: exactly five fingers per hand, correct anatomy, no fused or extra fingers.');
     L.push(guitar
-      ? '- The fretting hand must actually form the named chord; no vague hand resting on the neck.'
+      ? '- No hand simply gripping the neck, no thumb hooked over the top edge, and the hand is ' +
+        'never up on the headstock — it stays on the fretboard exactly where the description puts it.'
       : '- The fingers must actually depress the named keys; no hands hovering above the keyboard.');
     L.push(guitar ? '- Six strings, straight neck, correct number of tuning pegs.'
       : '- Correct black-key grouping (alternating twos and threes).');
@@ -751,8 +777,11 @@
     L.push(identityBlock(c));
     L.push('```');
     L.push('');
-    L.push('**Framing for every panel:** waist-up, the fretting hand clearly visible on the neck ' +
-      'and in sharp focus, instrument angled so the fingers read, consistent scale and lighting.');
+    L.push('**Framing for every panel:** waist-up, the instrument angled so the fretboard faces the ' +
+      'camera, ' + HAND_FOCUS + ', consistent scale and lighting across the sheet.');
+    L.push('');
+    L.push('> If a chord comes back with the hand merely gripping the neck, regenerate that one ' +
+      'tighter — a wide shot gives the model no reason to place fingers precisely.');
     L.push('');
     L.push('## GPT / ChatGPT — paste this once, then request each chord');
     L.push('```');
