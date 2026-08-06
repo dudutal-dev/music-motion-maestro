@@ -208,6 +208,19 @@
      fingertips are visible on the fretboard face, and where the thumb is. This
      converts the fingering into that language, which is what a generator can
      actually act on. */
+  /* Strings named by what the eye can actually judge — relative thickness —
+     rather than by the numbering only a player knows. Index 0 is the low E. */
+  const STRING_VISUAL = [
+    'the thickest string', 'the second-thickest string', 'the third-thickest string',
+    'the third-thinnest string', 'the second-thinnest string', 'the thinnest string'
+  ];
+  const fretSpaces = fret =>
+    fret === 1 ? 'in the first fret space, right against the nut'
+      : fret <= 4 ? `in the ${['', 'first', 'second', 'third', 'fourth'][fret]} fret space from the nut`
+      : `at ${neckLandmark(fret)}`;
+  const listOf = a => a.length < 2 ? a[0]
+    : a.slice(0, -1).join(', ') + ' and ' + a[a.length - 1];
+
   function neckLandmark(fret) {
     if (fret <= 2) return 'right up against the nut, in the first two fret spaces';
     if (fret === 3) return 'at the first inlay dot marker';
@@ -233,19 +246,38 @@
     const f = guitarFingering(name);
     if (!f) return null;
     const parts = [];
-    const pressedCount = f.shape.filter(x => typeof x === 'number' && x > 0).length;
     if (f.barre) {
-      const extra = f.shape.filter((x, i) => typeof x === 'number' && x > 0 && x !== f.baseFret).length;
       parts.push(`the index finger is laid completely flat across all six strings ${neckLandmark(f.baseFret)}`);
-      if (extra) parts.push(`${extra} more arched fingertips press the strings one to two fret spaces above it, each on a different string`);
+      const extras = [];
+      f.shape.forEach((fr, i) => {
+        if (typeof fr === 'number' && fr > 0 && fr !== f.baseFret && f.fingers[i] > 0) {
+          extras.push(`the ${GUITAR_FINGER_EN[f.fingers[i]]} presses ${STRING_VISUAL[i]} ` +
+            `${fretSpaces(fr)}`);
+        }
+      });
+      if (extras.length) parts.push(extras.join(', '));
     } else {
       parts.push(`the fretting hand is ${neckLandmark(f.baseFret)}`);
-      parts.push(`${pressedCount} arched fingertip${pressedCount > 1 ? 's' : ''} press${pressedCount === 1 ? 'es' : ''} ` +
-        'straight down onto the face of the fretboard, each on a different string, all of them clearly visible from the front');
+      const placed = [];
+      f.shape.forEach((fr, i) => {
+        if (typeof fr === 'number' && fr > 0 && f.fingers[i] > 0) {
+          placed.push(`the ${GUITAR_FINGER_EN[f.fingers[i]]} presses ${STRING_VISUAL[i]} ${fretSpaces(fr)}`);
+        }
+      });
+      // Naming which string each finger takes is what separates A from C from
+      // Am — a fingertip count alone describes half the open chords equally.
+      if (placed.length) parts.push(placed.join(', '));
+      parts.push('every fingertip is arched and pressing the face of the fretboard, ' +
+        'all of them visible from the front');
     }
     parts.push('the thumb is behind the neck and hidden from view, not hooked over the top edge');
-    const open = f.shape.filter(x => x === 0).length;
-    if (open) parts.push(`${open} string${open > 1 ? 's are' : ' is'} left ringing open, untouched by any finger`);
+    const openStrings = [], mutedStrings = [];
+    f.shape.forEach((fr, i) => {
+      if (fr === 0) openStrings.push(STRING_VISUAL[i]);
+      else if (fr === 'x') mutedStrings.push(STRING_VISUAL[i]);
+    });
+    if (openStrings.length) parts.push(`${listOf(openStrings)} ring open, untouched`);
+    if (mutedStrings.length) parts.push(`${listOf(mutedStrings)} not sounded`);
     return parts.join('; ');
   }
 

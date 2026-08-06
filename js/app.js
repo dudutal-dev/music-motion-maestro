@@ -498,7 +498,10 @@
       const groups = MM.CHORD_GROUPS.filter(g => on.includes(g.id));
       if (!groups.length) { $('#poster-text').value = 'בחר לפחות קבוצת אקורדים אחת.'; return; }
       // One ready prompt per chord at the chosen tier, plus the shared setup.
-      const L = [CH.chordPosterPrompts(ch, groups), '', '---', '',
+      const L = ['# 1️⃣ פרומפט פתיחה — הדבק אותו פעם אחת', '',
+        '```', CH.chordSessionOpener(ch, groups, tierId), '```', '',
+        '---', '', '# 2️⃣ פרומפטים בודדים (אם תרצה להריץ אקורד לבד)', '',
+        CH.chordPosterPrompts(ch, groups), '', '---', '',
         `# פרומפט מוכן לכל אקורד — ${tier ? tier.he : tierId}`, ''];
       for (const g of groups) {
         L.push('## ' + g.he, '');

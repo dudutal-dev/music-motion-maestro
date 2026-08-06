@@ -822,6 +822,95 @@
     return gptPrompt(c, { chord, label: 'mid', type: PANEL_TYPES[1], movement: '' });
   }
 
+  /**
+   * A single opening message that sets up a whole chord session: the locked
+   * character, the hand rules, the reference scoping, and the full numbered
+   * chord list with each shape already translated into visual terms. Paste it
+   * once and then drive the run one chord at a time.
+   */
+  function chordSessionOpener(c, groups, tierId) {
+    const tier = tierId || 'balanced';
+    const guitar = c.instrument !== 'piano';
+    const style = pick(STYLES, c.style, STYLES[3]);
+    const scene = pick(SCENES, c.scene, null);
+    const chords = groups.flatMap(g => g.chords).filter(ch => MM.visualFingering(ch, c.instrument));
+    const L = [];
+
+    L.push(`I need ${chords.length} images: one per guitar chord, for a chord-chart poster.`);
+    L.push('Every image shows the SAME character. Only the hand changes.');
+    L.push('');
+    L.push('Generate them one at a time, in the order listed at the end. After each image ' +
+      'I will reply "next" and you generate the following chord. Do not generate more than ' +
+      'one at a time, and do not combine several chords into a grid — each chord needs its ' +
+      'own frame or the finger positions become unreadable.');
+    L.push('');
+    L.push('---');
+    L.push('');
+    L.push('## THE CHARACTER (identical in all ' + chords.length + ' images)');
+    L.push(identityBlock(c, 'mid'));
+    L.push('');
+    L.push('## THE INSTRUMENT (identical in all images)');
+    L.push(instrumentBlock(c));
+    L.push('');
+    L.push('## FRAMING');
+    if (tier === 'macro') {
+      L.push(guitar
+        ? 'Extreme close-up: only the fretting hand, the neck and the fretboard are in frame. ' +
+          'No face, no background, no scene.'
+        : 'Extreme close-up: only the hands and the keys are in frame. No face, no background.');
+    } else {
+      L.push('Waist-up. The instrument is angled so the face of the fretboard is turned toward ' +
+        'the camera. ' + HAND_FOCUS + '.');
+      L.push('Keep the background simple and out of focus so nothing competes with the hand.');
+    }
+    L.push('');
+    L.push('## STYLE AND LIGHT');
+    L.push(`${style.anchor}`);
+    L.push(`${pick(LIGHTING, c.lighting).v}`);
+    if (tier !== 'macro') L.push((scene && scene.v) || c.world || pick(BACKDROPS, c.backdrop).v);
+    if (c.palette) L.push(c.palette);
+    L.push('');
+    L.push('## THE HAND — the whole point of this set');
+    L.push('For each chord I give you a description of where the hand goes. Those descriptions ' +
+      'are requirements, not atmosphere. In particular:');
+    if (guitar) {
+      L.push('- Position along the neck is given by the inlay dot markers. Put the hand there.');
+      L.push('- The stated number of fingertips press down on the FACE of the fretboard, each on ' +
+        'a different string, arched so the tips are visible from the front.');
+      L.push('- The thumb stays behind the neck, out of sight. Never hooked over the top edge.');
+      L.push('- The hand is never up on the headstock or over the tuning pegs — nothing can be ' +
+        'fretted there.');
+      L.push('- Fingertips press just behind a fret wire, not in the middle of a fret space.');
+    } else {
+      L.push('- The stated fingers press their keys down; those keys sit visibly lower than their neighbours.');
+      L.push('- Fingers curved, wrists level with the forearms.');
+    }
+    L.push('- Hands are anatomically correct: five fingers each, no fusing, no extras.');
+    L.push('');
+    if (c.portrait) {
+      L.push('## REFERENCE IMAGE');
+      L.push('I am attaching a reference image of the character.');
+      L.push('Use it for the FACE, HAIR, WARDROBE and INSTRUMENT only.');
+      L.push('DO NOT copy the hand position, the arm position or the pose from it. The reference ' +
+        'does not show correct chord shapes. Re-pose the hands from scratch for every chord ' +
+        'according to the description I give you. If the reference and my description disagree ' +
+        'about the hands, my description wins.');
+      L.push('');
+    }
+    L.push('---');
+    L.push('');
+    L.push(`## THE ${chords.length} CHORDS, IN ORDER`);
+    L.push('');
+    chords.forEach((ch, i) => {
+      L.push(`${i + 1}. **${ch}** (${chordSpoken(ch)}) — ${MM.visualFingering(ch, c.instrument)}`);
+    });
+    L.push('');
+    L.push('---');
+    L.push('');
+    L.push(`Start with number 1 (${chords[0]}). Generate that one image now.`);
+    return L.join('\n');
+  }
+
   /** Catch the things that quietly ruin a generation before the user pastes it. */
   function promptHealth(text, c, panel) {
     const words = String(text).trim().split(/\s+/).length;
@@ -957,7 +1046,7 @@
     CAMERAS, LIGHTING, BACKDROPS, SKIN, NEGATIVE_BASE,
     ARCHETYPES, INSTRUMENT_THEMES, SCENES, INTENSITY, fingeringSection, wardrobeFor,
     compactPrompt, gptPrompt, shortHand, promptHealth, chordPosterPrompts,
-    SHOT_TIERS, chordShotPrompt, chordSpoken,
+    SHOT_TIERS, chordShotPrompt, chordSpoken, chordSessionOpener,
     isPhotoreal, identityBlock, instrumentBlock,
     buildPanels, masterPrompt, panelPrompt, keyframePrompt,
     characterSheetPrompt, characterBrief, toolParams, mmss
