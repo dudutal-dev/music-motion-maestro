@@ -25,6 +25,11 @@
     stageMode: 'anim',
     chordInst: 'guitar',
     posterGroups: ['major', 'minor', 'seventh', 'sus'],
+    transpose: 0,
+    capo: 0,
+    loop: null,
+    lastBar: -1,
+    navOpen: false,
     lastBeatIndex: -1,
     activeLesson: null
   };
@@ -66,6 +71,7 @@
     lib: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h4v16H4zM11 4h3v16h-3zM17.5 5l3 15"/></svg>',
     stage: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="7" r="3"/><path d="M5 21v-2a5 5 0 0 1 5-5h4a5 5 0 0 1 5 5v2"/></svg>',
     chars: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="8" r="3.2"/><path d="M2.5 20v-1.6A4.9 4.9 0 0 1 7.4 13.5h3.2a4.9 4.9 0 0 1 4.9 4.9V20"/><path d="M16 5.2a3.2 3.2 0 0 1 0 6.1M18.5 13.9a4.9 4.9 0 0 1 3 4.5V20"/></svg>',
+    chart: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M4 12h16M4 18h10"/><circle cx="18" cy="18" r="2.5"/></svg>',
     chords: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 3v18M12 3v18M16 3v18M4 9h16M4 15h16"/></svg>',
     poster: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>',
     lessons: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 6.5S9.5 4 6 4H3v13h3c3.5 0 6 2 6 2s2.5-2 6-2h3V4h-3c-3.5 0-6 2.5-6 2.5z"/></svg>',
@@ -82,6 +88,7 @@
       ['home', 'ראשי', icons.home],
       ['library', 'הספרייה שלי', icons.lib],
       ['stage', 'במה חיה', icons.stage],
+      ['chart', 'תרשים אקורדים', icons.chart],
       ['characters', 'דמויות', icons.chars],
       ['chords', 'ספריית אקורדים', icons.chords],
       ['poster', 'הרכבת פוסטר', icons.poster],
@@ -317,6 +324,95 @@
         : `<div class="empty"><div class="empty-icon">🎭</div><h3>אין דמויות עדיין</h3>
            <p>צור דמות — היא תישמר ותשמש לכל שיר בספרייה, עם פרומפט-מאסטר לסטוריבורד.</p>
            <button class="btn btn-primary" data-action="new-character">צור דמות</button></div>`}
+    </div>`;
+  }
+
+  /* ---------------- play-along chord chart ----------------
+     The stage is for watching; this is for playing. Bars laid out on a
+     grid, the current one lit as the track moves, click any bar to jump
+     there, loop a section to drill it, and transpose or capo the whole
+     chart without touching the analysis. */
+  function buildBars(a, transpose) {
+    const sig = a.timeSignature || 4;
+    const barLen = (60 / a.bpm) * sig;
+    const bars = [];
+    for (let t = a.firstBeat || 0, i = 0; t < a.duration - 0.01; t += barLen, i++) {
+      const seg = A.chordAt(a, t + 0.01);
+      const sec = A.sectionAt(a, t + 0.01);
+      let chord = seg ? seg.chord : null;
+      if (chord && transpose) chord = MM.transposeChord(chord, transpose);
+      bars.push({
+        index: i, start: +t.toFixed(3), end: Math.min(t + barLen, a.duration),
+        chord, label: sec ? sec.label : 'mid',
+        isSectionStart: !!(sec && Math.abs(sec.start - t) < barLen * 0.5)
+      });
+    }
+    return bars;
+  }
+
+  function viewChart() {
+    const t = state.currentTrackId ? Store.getTrack(state.currentTrackId) : null;
+    if (!t || !t.analysis || !t.analysis.bpm) {
+      return `<div class="page">${pageHead('תרשים אקורדים', 'לנגן יחד עם השיר')}
+        <div class="empty"><div class="empty-icon">🎼</div>
+          <h3>${t ? 'השיר עוד לא נותח' : 'לא נבחר שיר'}</h3>
+          <p>צריך BPM ואקורדים כדי לפרוס את התרשים על תיבות.</p>
+          ${t ? `<button class="btn btn-primary" data-action="analyze" data-id="${t.id}">נתח עכשיו</button>`
+             : `<button class="btn btn-primary" data-route="library">לספרייה</button>`}
+        </div></div>`;
+    }
+    const a = t.analysis;
+    const bars = buildBars(a, state.transpose);
+    const sounding = MM.transposeChord ? state.transpose : 0;
+    const capoShapes = state.capo
+      ? [...new Set(A.progressionOf(a).map(c => MM.transposeChord(c, state.transpose - state.capo)))]
+      : null;
+    return `<div class="page">
+      ${pageHead('תרשים אקורדים', `${esc(t.title)} · ${Math.round(a.bpm)} BPM · ${bars.length} תיבות`)}
+      <div class="panel" style="padding:16px 20px">
+        <div style="display:flex;gap:20px;align-items:center;flex-wrap:wrap">
+          <div>
+            <label style="font-size:11.5px;font-weight:700;color:var(--text-3);letter-spacing:.06em">טרנספוזיציה</label>
+            <div style="display:flex;gap:6px;align-items:center;margin-top:6px">
+              <button class="btn btn-sm" data-transpose="-1">−</button>
+              <span class="pill" style="min-width:56px;text-align:center">${sounding > 0 ? '+' : ''}${sounding}</span>
+              <button class="btn btn-sm" data-transpose="1">+</button>
+              ${state.transpose ? '<button class="btn btn-sm btn-ghost" data-transpose="0">איפוס</button>' : ''}
+            </div>
+          </div>
+          <div>
+            <label style="font-size:11.5px;font-weight:700;color:var(--text-3);letter-spacing:.06em">קאפו</label>
+            <div style="display:flex;gap:6px;align-items:center;margin-top:6px">
+              <button class="btn btn-sm" data-capo="-1">−</button>
+              <span class="pill" style="min-width:56px;text-align:center">${state.capo || 'ללא'}</span>
+              <button class="btn btn-sm" data-capo="1">+</button>
+            </div>
+          </div>
+          <div style="flex:1;min-width:180px">
+            ${capoShapes ? `<label style="font-size:11.5px;font-weight:700;color:var(--text-3)">הצורות שתנגן עם קאפו ${state.capo}</label>
+              <div class="next-chords" style="margin-top:6px">${capoShapes.map(c =>
+                `<span class="next-chord" style="padding:5px 10px;font-size:12.5px">${esc(c)}</span>`).join('')}</div>`
+              : '<div class="hint">קאפו ממיר את התרשים לצורות קלות יותר בלי לשנות את הצליל.</div>'}
+          </div>
+          <button class="btn btn-sm ${state.loop ? 'btn-primary' : ''}" data-action="clear-loop"
+            ${state.loop ? '' : 'disabled'}>${state.loop ? '⟲ לולאה פעילה — בטל' : 'לולאה כבויה'}</button>
+        </div>
+      </div>
+      <div class="chips" style="margin-bottom:14px">
+        ${(a.sections || []).map((s, i) => `
+          <button class="chip" data-loop-section="${i}">
+            ${{ low: 'שקט', mid: 'ביניים', high: 'שיא' }[s.label] || s.label} ${fmt(s.start)}
+          </button>`).join('')}
+      </div>
+      <div class="chart-grid" id="chart-grid">
+        ${bars.map(b => `
+          <div class="chart-bar ${b.label} ${b.isSectionStart ? 'section-start' : ''}"
+               data-bar="${b.index}" data-t="${b.start}">
+            <span class="chart-num">${b.index + 1}</span>
+            <span class="chart-chord">${esc(b.chord || '·')}</span>
+          </div>`).join('')}
+      </div>
+      <div class="hint" style="margin-top:14px">לחץ על תיבה כדי לקפוץ אליה · לחץ על סקשן כדי להריץ אותו בלולאה</div>
     </div>`;
   }
 
@@ -662,10 +758,10 @@ python scripts/build_sync_map.py work/analysis.json --chords work/chords.json --
      ============================================================ */
   function render() {
     renderSidebar();
-    if (state.route === 'stage') ensureStageTrack();
+    if (state.route === 'stage' || state.route === 'chart') ensureStageTrack();
     const views = {
       home: viewHome, library: viewLibrary, stage: viewStage,
-      characters: viewCharacters, chords: viewChords, poster: viewPoster,
+      chart: viewChart, characters: viewCharacters, chords: viewChords, poster: viewPoster,
       lessons: viewLessons, settings: viewSettings
     };
     $('#view').innerHTML = (views[state.route] || viewHome)();
@@ -766,6 +862,31 @@ python scripts/build_sync_map.py work/analysis.json --chords work/chords.json --
       }
       const hc = $('#hero-chord');
       if (hc && hc.textContent !== (chord || '—')) hc.textContent = chord || '—';
+    }
+
+    // loop the selected section
+    if (state.loop && time >= state.loop.end - 0.02) {
+      P.seek(state.loop.start);
+      return;
+    }
+
+    if (state.route === 'chart') {
+      const sig = a.timeSignature || 4;
+      const barLen = (60 / a.bpm) * sig;
+      const idx = Math.floor((time - (a.firstBeat || 0)) / barLen);
+      if (idx !== state.lastBar) {
+        state.lastBar = idx;
+        const grid = $('#chart-grid');
+        if (grid) {
+          const prev = grid.querySelector('.chart-bar.now');
+          if (prev) prev.classList.remove('now');
+          const cur = grid.querySelector(`[data-bar="${idx}"]`);
+          if (cur) {
+            cur.classList.add('now');
+            if (P.playing) cur.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+          }
+        }
+      }
     }
 
     // beat pulse in the player bar
@@ -873,6 +994,8 @@ python scripts/build_sync_map.py work/analysis.json --chords work/chords.json --
     if (!t) return;
     state.currentTrackId = id;
     state.lastBeatIndex = -1;
+    state.lastBar = -1;
+    state.loop = null;
     lastReadoutChord = null;
     if (state.stageChar && state.stageChar.instrument) {
       // keep instrument choice
@@ -1344,6 +1467,23 @@ python scripts/extract_chords.py work/audio.wav --beats work/analysis.json --out
         () => { ta.removeAttribute('readonly'); ta.select(); document.execCommand('copy'); toast('הועתק'); });
       return;
     }
+    if (a === 'nav-toggle') {
+      state.navOpen = !state.navOpen;
+      $('#sidebar').classList.toggle('open', state.navOpen);
+      let scrim = document.querySelector('.sidebar-scrim');
+      if (state.navOpen && !scrim) {
+        scrim = document.createElement('div');
+        scrim.className = 'sidebar-scrim';
+        scrim.addEventListener('click', () => {
+          state.navOpen = false;
+          $('#sidebar').classList.remove('open');
+          scrim.remove();
+        });
+        document.body.appendChild(scrim);
+      } else if (!state.navOpen && scrim) scrim.remove();
+      return;
+    }
+    if (a === 'clear-loop') { state.loop = null; return render(); }
     if (a === 'poster-export') return exportPoster();
     if (a === 'poster-clear') {
       Object.keys(posterImages).forEach(k => delete posterImages[k]);
@@ -1475,6 +1615,27 @@ python scripts/extract_chords.py work/audio.wav --beats work/analysis.json --out
       else { LS.Audio.startMetronome(+$('#metro-bpm').value, 4); act.textContent = '■ עצור'; }
       return;
     }
+
+    const tr = e.target.closest('[data-transpose]');
+    if (tr) {
+      const v = +tr.dataset.transpose;
+      state.transpose = v === 0 ? 0 : Math.max(-11, Math.min(11, state.transpose + v));
+      return render();
+    }
+    const cp = e.target.closest('[data-capo]');
+    if (cp) {
+      state.capo = Math.max(0, Math.min(9, state.capo + (+cp.dataset.capo)));
+      return render();
+    }
+    const ls = e.target.closest('[data-loop-section]');
+    if (ls) {
+      const t = Store.getTrack(state.currentTrackId);
+      const sec = t && t.analysis && t.analysis.sections[+ls.dataset.loopSection];
+      if (sec) { state.loop = { start: sec.start, end: sec.end }; P.seek(sec.start); render(); }
+      return;
+    }
+    const bar = e.target.closest('[data-bar]');
+    if (bar) { P.seek(+bar.dataset.t); if (!P.playing) P.play(); return; }
 
     const cinst = e.target.closest('[data-cinst]');
     if (cinst) { state.chordInst = cinst.dataset.cinst; return render(); }

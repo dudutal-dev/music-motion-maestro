@@ -438,6 +438,42 @@ a { color: inherit; text-decoration: none; }
 .tab:hover { color: var(--text-2); }
 .tab.active { color: var(--text); border-bottom-color: var(--accent); }
 
+/* play-along chord chart */
+.chart-grid {
+  direction: ltr;
+  display: grid; gap: 8px;
+  grid-template-columns: repeat(4, 1fr);
+}
+@media (min-width: 900px) { .chart-grid { grid-template-columns: repeat(8, 1fr); } }
+.chart-bar {
+  position: relative; aspect-ratio: 3/2; border-radius: var(--radius);
+  background: var(--panel); border: 1px solid var(--line);
+  display: grid; place-items: center; cursor: pointer;
+  transition: background .12s, border-color .12s, transform .12s var(--ease);
+}
+.chart-bar:hover { border-color: var(--line-2); transform: translateY(-2px); }
+.chart-bar.low  { background: #0d0d11; }
+.chart-bar.mid  { background: #14141a; }
+.chart-bar.high { background: #1b1b23; }
+.chart-bar.section-start { border-inline-start: 3px solid var(--accent-2); }
+.chart-bar.now {
+  background: var(--accent); border-color: transparent;
+  box-shadow: 0 0 0 3px rgba(0, 229, 208, .25);
+}
+.chart-bar.now .chart-chord, .chart-bar.now .chart-num { color: #00201d; }
+.chart-num {
+  position: absolute; top: 5px; inset-inline-start: 7px;
+  font-size: 10px; color: var(--text-3); font-variant-numeric: tabular-nums;
+}
+.chart-chord { font-size: 19px; font-weight: 800; letter-spacing: -.01em; }
+
+/* mobile nav */
+.nav-toggle { display: none; }
+.sidebar-scrim {
+  position: fixed; inset: 0; z-index: 39; background: rgba(0, 0, 0, .6);
+  backdrop-filter: blur(3px); animation: fade .18s var(--ease);
+}
+
 /* poster assembler */
 .poster-cell {
   position: relative; aspect-ratio: 4/5; border-radius: var(--radius);
@@ -477,8 +513,15 @@ a { color: inherit; text-decoration: none; }
 
 @media (max-width: 1080px) {
   .app { grid-template-columns: 1fr 0; }
-  .sidebar { position: fixed; inset-block: 0; inset-inline-end: 0; width: var(--sidebar); transform: translateX(100%); transition: transform .26s var(--ease); }
-  .sidebar.open { transform: none; }
+  .nav-toggle { display: inline-flex; }
+  /* Slide along the inline axis using a logical inset. translateX is not
+     direction-aware, so in RTL it pushed the panel on-screen instead of off. */
+  .sidebar {
+    position: fixed; inset-block: 0; width: var(--sidebar);
+    inset-inline-end: calc(-1 * var(--sidebar));
+    transition: inset-inline-end .26s var(--ease);
+  }
+  .sidebar.open { inset-inline-end: 0; }
   .stage-wrap { grid-template-columns: 1fr; }
   .page, .topbar { padding-inline: 20px; }
   .player { grid-template-columns: 1fr auto; }

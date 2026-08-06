@@ -267,6 +267,20 @@
 
   const CHORD_NAMES = Object.keys(GUITAR);
 
+  /** Shift a chord by semitones, keeping its quality. Used for transpose/capo. */
+  function transposeChord(name, semitones) {
+    const p = parseChord(name);
+    if (!p) return name;
+    const i = PITCHES.indexOf(p.root);
+    if (i < 0) return name;
+    return PITCHES[(((i + semitones) % 12) + 12) % 12] + p.suffix;
+  }
+
+  /** Capo advice: the shapes a player actually forms with the capo on. */
+  function capoShapes(chords, capo) {
+    return chords.map(c => transposeChord(c, -capo));
+  }
+
   /* ---------- YouTube helpers ---------- */
   function parseVideoId(url) {
     if (!url) return null;
@@ -338,7 +352,7 @@
     PITCHES, PITCHES_HE, STRINGS, GUITAR, CHORD_NAMES, CHORD_GROUPS,
     parseChord, guitarFingering, pianoVoicing, romanNumeral,
     guitarFingeringSentence, pianoVoicingSentence, fingeringSentence,
-    visualFingering, neckLandmark,
+    visualFingering, neckLandmark, transposeChord, capoShapes,
     parseVideoId, thumbUrl, Store
   };
 })(window);
