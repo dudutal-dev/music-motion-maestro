@@ -391,6 +391,20 @@
       }
       L.push('');
       L.push.apply(L, fingeringSection(a, inst));
+
+      // Ready-to-paste short prompts. Midjourney weights early tokens and
+      // dilutes long prose, so it gets its own priority-ordered variant.
+      L.push('## MIDJOURNEY — one line per panel (paste as-is)');
+      L.push('');
+      const mjParams = toolParams(character, 'midjourney').split('\n')[0];
+      for (const p of panels) {
+        L.push(`**${p.index}. ${mmss(p.start)}–${mmss(p.end)} · ${p.chord || '—'}**  `);
+        L.push('`' + compactPrompt(character, p) + ' ' + mjParams + '`');
+        L.push('');
+      }
+      L.push('For panels after the first, append `--cref <URL of your hero image> --cw 100` ' +
+        'so the face and wardrobe stay locked.');
+      L.push('');
     }
 
     L.push('## PER-PANEL PROMPT PATTERN');
@@ -559,13 +573,87 @@
     return L.join('\n');
   }
 
+  /* ============================================================
+     Compact variant
+     One prompt does not fit every tool. The layered prose above is right
+     for GPT/Gemini, which read it as instructions. Midjourney weights
+     early tokens and dilutes past roughly sixty words, so a 1500-character
+     paragraph turns to mush and the hand instruction — buried at the end —
+     is the first thing lost. This builds a short, priority-ordered variant
+     where identity, instrument and chord come first.
+     ============================================================ */
+  const firstClause = s => String(s || '').split(',')[0].trim();
+
+  /** A few words instead of a full finger-by-finger sentence. */
+  function shortHand(chord, instrument) {
+    if (!chord) return '';
+    if (instrument === 'piano') {
+      const v = MM.pianoVoicing(chord, 4);
+      return v ? `right hand on ${v.keys.map(k => k.note).join('-')}, left hand on the ${v.bass.note} bass` : '';
+    }
+    const f = MM.guitarFingering(chord);
+    if (!f) return '';
+    if (f.barre) return `index finger barring all strings at fret ${f.baseFret}`;
+    const frets = [...new Set(f.shape.filter(x => typeof x === 'number' && x > 0))].sort((a, b) => a - b);
+    if (!frets.length) return 'all strings open';
+    const list = frets.length < 2 ? String(frets[0])
+      : frets.slice(0, -1).join(', ') + ' and ' + frets[frets.length - 1];
+    return `fingers pressing fret${frets.length > 1 ? 's' : ''} ${list} near the nut`;
+  }
+
+  function compactPrompt(c, panel) {
+    const style = pick(STYLES, c.style, STYLES[3]);
+    const scene = pick(SCENES, c.scene, null);
+    const label = panel ? panel.label : 'mid';
+    const arch = pick(ARCHETYPES, c.archetype, null);
+    const bits = [];
+    if (c.age) bits.push(c.age);
+    if (arch && arch.v) bits.push(arch.v);
+    if (c.description) bits.push(firstClause(c.description));
+    const feat = (c.features || '').trim() || (arch && arch.features) || '';
+    if (feat) bits.push(firstClause(feat));
+    const w = wardrobeFor(c, label);
+    if (w) bits.push(`wearing ${firstClause(w)}`);
+    bits.push(`playing ${firstClause(instrumentBlock(c))}`);
+    if (panel && panel.chord) {
+      bits.push(`${panel.chord} chord`);
+      const sh = shortHand(panel.chord, c.instrument);
+      if (sh) bits.push(sh);
+    }
+    if (label === 'high') bits.push('sweat-damp hair, caught mid-motion');
+    if (panel) bits.push(firstClause(panel.type.frame));
+    if (scene && scene.v) bits.push(firstClause(scene.v));
+    bits.push(firstClause(pick(LIGHTING, c.lighting).v));
+    bits.push(firstClause(style.anchor));
+    if (c.palette) bits.push(c.palette);
+    return bits.filter(Boolean).join(', ');
+  }
+
+  /** Catch the things that quietly ruin a generation before the user pastes it. */
+  function promptHealth(text, c, panel) {
+    const words = String(text).trim().split(/\s+/).length;
+    const warn = [];
+    if (/\[describe|\[character\]/.test(text))
+      warn.push('הזהות עדיין מציין מקום — מלא את תיאור הדמות, אחרת המודל ימציא אותה');
+    if (panel && panel.chord && !text.includes(panel.chord))
+      warn.push('האקורד לא מופיע בפרומפט');
+    // negatives arrive either as a prose line (GPT/Gemini) or as --no (Midjourney)
+    if (isPhotoreal(c) && !/Negative prompt/.test(text) && !/--no\s/.test(text))
+      warn.push('חסר negative prompt — הידיים הן נקודת הכישלון');
+    if (words > 130)
+      warn.push(`${words} מילים — ארוך מדי ל-Midjourney, השתמש בגרסה הקומפקטית`);
+    return { words, chars: String(text).length, warnings: warn };
+  }
+
   /** Tool-specific suffixes. Getting these right is often the difference
    *  between a good prompt and a good image. */
   function toolParams(c, tool) {
     const photo = isPhotoreal(c);
     switch (tool) {
       case 'midjourney':
-        return `--ar 2:3 ${photo ? '--style raw --stylize 150' : '--stylize 400'} --quality 2` +
+        // Midjourney takes negatives as --no, not as a "Negative prompt:" line.
+        return `--ar 2:3 ${photo ? '--style raw --stylize 150' : '--stylize 400'} --quality 2 ` +
+          '--no extra fingers, deformed hands, blurry, watermark, text' +
           '\n(for later panels add --cref <URL of your hero image> --cw 100 to lock the character)';
       case 'gemini':
         return 'Ask for a single image, state the hand placement as an explicit instruction sentence, ' +
@@ -608,6 +696,7 @@
     STYLES, PALETTES, TOOLS, PANEL_TYPES,
     CAMERAS, LIGHTING, BACKDROPS, SKIN, NEGATIVE_BASE,
     ARCHETYPES, INSTRUMENT_THEMES, SCENES, INTENSITY, fingeringSection, wardrobeFor,
+    compactPrompt, shortHand, promptHealth,
     isPhotoreal, identityBlock, instrumentBlock,
     buildPanels, masterPrompt, panelPrompt, keyframePrompt,
     characterSheetPrompt, characterBrief, toolParams, mmss

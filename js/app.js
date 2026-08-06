@@ -939,16 +939,31 @@ python scripts/extract_chords.py work/audio.wav --beats work/analysis.json --out
       <div class="field">
         <label>פרומפט-מאסטר לכל הקליפ${out.panels.length ? ` (${out.panels.length} פאנלים)` : ''}</label>
         <textarea id="mp-text" readonly style="min-height:330px">${esc(out.text)}</textarea>
+        <div class="hint" id="mp-health"></div>
       </div>`,
       `<button class="btn btn-primary" data-action="copy-mp">העתק פרומפט</button>
        <button class="btn" data-action="download-mp" data-id="${charId}">הורד .md</button>
        <button class="btn btn-ghost" data-action="close-modal">סגור</button>`);
+
+    /** Show what the prompt is missing before the user pastes it somewhere. */
+    const showHealth = (o, forChar) => {
+      const box = $('#mp-health');
+      if (!box) return;
+      const sample = o.panels.length ? CH.panelPrompt(forChar, o.panels[0]) : o.text;
+      const h = CH.promptHealth(sample, forChar, o.panels[0] || null);
+      box.innerHTML = h.warnings.length
+        ? `⚠️ ${h.warnings.map(esc).join(' · ')}`
+        : `✓ ${o.panels.length} פאנלים · פרומפט פאנל ${h.words} מילים · כולל אצבוע מדויק ו-negatives`;
+      box.style.color = h.warnings.length ? 'var(--warn)' : 'var(--accent)';
+    };
+    showHealth(out, c);
 
     const sel = $('#mp-track');
     if (sel) sel.addEventListener('change', () => {
       const nt = Store.getTrack(sel.value);
       const o = CH.masterPrompt(c, nt);
       $('#mp-text').value = o.text;
+      showHealth(o, c);
     });
   }
 
