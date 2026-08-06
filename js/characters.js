@@ -715,8 +715,16 @@
     L.push('- No waxy or plastic skin, no text or watermarks.');
     if (c.portrait) {
       L.push('');
-      L.push('REFERENCE: use the attached image for the face, hair, wardrobe and instrument. ' +
-        'Do not redesign the character — only the pose, the hand and the framing change.');
+      L.push('REFERENCE — read this carefully:');
+      L.push('Use the attached image for the FACE, HAIR, WARDROBE and INSTRUMENT only.');
+      // A reference image supplies pose as well as identity. When the reference
+      // shows a hand in the wrong place, "keep the character consistent" quietly
+      // copies that hand and overrides the fingering, which is what five
+      // independent seeds of one prompt all did.
+      L.push('DO NOT copy the hand position, the arm position or the pose from the reference. ' +
+        'The hands must be re-posed from scratch exactly as described above, even if that ' +
+        'differs completely from the reference image.');
+      L.push('If the reference and this description disagree about the hands, this description wins.');
     }
     return L.join('\n');
   }
@@ -735,8 +743,9 @@
       note: 'רק היד והצוואר בפריים. הכי אמין לאצבוע נכון; הפנים לא נראים.' },
     { id: 'balanced', he: 'מאוזן — חצי גוף',
       note: 'הדמות מזוהה והיד בחזית וקרובה. זה מה שפוסטר אקורדים צריך.' },
-    { id: 'wide', he: 'רחב — יופי',
-      note: 'סצנה מלאה. יפה, אבל היד קטנה בפריים ולכן פחות אמינה.' }
+    { id: 'wide', he: 'רחב — יופי (לא לאקורדים)',
+      note: 'סצנה מלאה. יפה — אבל נבדק: חמישה seeds עצמאיים החזירו יד שגויה. ' +
+        'אל תשתמש בזה כשהאקורד חייב להיות נכון.' }
   ];
 
   const chordSpoken = chord => {
@@ -776,7 +785,7 @@
       L.push('');
       L.push(`Only the hand, the neck and the fretboard are in frame. ${firstClause(style.anchor)}, ` +
         'macro lens, tack-sharp on the fingertips, shallow depth of field behind the strings.');
-      if (c.description) L.push(`Same player as the reference: ${firstClause(c.description)}.`);
+      L.push('No face, no background, no scene — just the hand on the fretboard.');
       L.push('');
       L.push(negativeLine(c));
       return L.join('\n');
@@ -794,7 +803,10 @@
       L.push(`Style and light: ${firstClause(style.anchor)}; ${firstClause(pick(LIGHTING, c.lighting).v)}; ` +
         `${firstClause(c.world || pick(BACKDROPS, c.backdrop).v)} kept simple and out of focus so nothing ` +
         'competes with the hand.');
-      if (c.portrait) L.push('Use the attached image for the face, hair, wardrobe and instrument.');
+      if (c.portrait) {
+        L.push('Use the attached image for the face, hair, wardrobe and instrument ONLY — ' +
+          'do not copy its hand or arm position. Re-pose the hands from the description above.');
+      }
       L.push('');
       L.push(negativeLine(c));
       return L.join('\n');
@@ -813,10 +825,17 @@
     if (panel && panel.chord && !text.includes(panel.chord))
       warn.push('האקורד לא מופיע בפרומפט');
     // negatives arrive either as a prose line (GPT/Gemini) or as --no (Midjourney)
-    if (isPhotoreal(c) && !/Negative prompt/.test(text) && !/--no\s/.test(text))
+    // negatives arrive three ways: a prose line, Midjourney's --no, or the
+    // GPT variant's MUST AVOID checklist
+    if (isPhotoreal(c) && !/Negative prompt/.test(text) && !/--no\s/.test(text) && !/MUST AVOID/.test(text))
       warn.push('חסר negative prompt — הידיים הן נקודת הכישלון');
-    if (words > 130)
+    const isBlockStyle = /MUST AVOID|SUBJECT —|THE HAND IS THE SUBJECT/.test(text);
+    if (words > 130 && !isBlockStyle)
       warn.push(`${words} מילים — ארוך מדי ל-Midjourney, השתמש בגרסה הקומפקטית`);
+    if (panel && panel.chord && c && c.portrait && !/DO NOT copy the hand|do not copy its hand/.test(text))
+      warn.push('יש תמונת ייחוס ואקורד — בלי הוראה מפורשת המודל יעתיק את היד מהייחוס');
+    if (panel && panel.chord && /full body|wide establishing/.test(text) && !/focal point|countable/.test(text))
+      warn.push('צילום רחב עם אקורד — היד תהיה קטנה מדי מכדי להיות מדויקת');
     return { words, chars: String(text).length, warnings: warn };
   }
 
