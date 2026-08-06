@@ -818,8 +818,11 @@ python scripts/extract_chords.py work/audio.wav --beats work/analysis.json --out
         <div class="field" style="grid-column:1/-1"><label>זהות הדמות (ננעלת וחוזרת מילה במילה)</label>
           <textarea id="c-desc" placeholder="פנים, שיער, מבנה גוף, פרט חתימה — באנגלית עובד הכי טוב">${esc(c.description || '')}</textarea>
           <div class="hint">לדוגמה: short dark curly hair, light stubble, warm olive skin, calm confident gaze, thin red string bracelet on the right wrist</div></div>
-        <div class="field" style="grid-column:1/-1"><label>לבוש</label>
+        <div class="field"><label>לבוש (ברירת מחדל)</label>
           <input id="c-wardrobe" value="${esc(c.wardrobe || '')}" placeholder="cream ribbed knit polo shirt, off-white trousers"></div>
+        <div class="field"><label>לבוש בסקשנים בשיא</label>
+          <input id="c-wardrobe-alt" value="${esc(c.wardrobeAlt || '')}" placeholder="black leather jacket over a black tee, leather trousers">
+          <div class="hint">רשות. הלבוש מתחלף בפזמונים — הזהות נשארת זהה.</div></div>
         <div class="field"><label>שפה עיצובית לכלי</label>
           <select id="c-insttheme">${opts(CH.INSTRUMENT_THEMES, c.instrumentTheme)}</select></div>
         <div class="field"><label>עיצוב הכלי (פירוט חופשי)</label>
@@ -829,9 +832,12 @@ python scripts/extract_chords.py work/audio.wav --beats work/analysis.json --out
         <div id="photoreal-fields" style="display:contents">
           <div class="field"><label>מצלמה / עדשה</label><select id="c-camera">${opts(CH.CAMERAS, c.camera)}</select></div>
           <div class="field"><label>תאורה</label><select id="c-lighting">${opts(CH.LIGHTING, c.lighting)}</select></div>
-          <div class="field"><label>רקע</label><select id="c-backdrop">${opts(CH.BACKDROPS, c.backdrop)}</select></div>
+          <div class="field"><label>רקע ל-hero</label><select id="c-backdrop">${opts(CH.BACKDROPS, c.backdrop)}</select></div>
           <div class="field"><label>מרקם עור</label><select id="c-skin">${opts(CH.SKIN, c.skin)}</select></div>
         </div>
+        <div class="field" style="grid-column:1/-1"><label>סצנת ההופעה (לפאנלים של הקליפ)</label>
+          <select id="c-scene">${opts(CH.SCENES, c.scene)}</select>
+          <div class="hint">ה-hero הוא פורטרט מבוקר שנועל זהות; הפאנלים מתרחשים בסצנה החיה.</div></div>
 
         <div class="field"><label>פלטת צבעים</label>
           <select id="c-palette">${CH.PALETTES.map(p =>
@@ -894,6 +900,8 @@ python scripts/extract_chords.py work/audio.wav --beats work/analysis.json --out
       features: $('#c-features').value.trim(),
       description: $('#c-desc').value.trim(),
       wardrobe: $('#c-wardrobe').value.trim(),
+      wardrobeAlt: $('#c-wardrobe-alt').value.trim(),
+      scene: $('#c-scene').value,
       instrumentTheme: $('#c-insttheme').value,
       instrumentDetail: $('#c-instdetail').value.trim(),
       camera: $('#c-camera').value,

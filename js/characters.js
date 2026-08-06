@@ -154,6 +154,43 @@
         'honest play wear and light checking in the lacquer' }
   ];
 
+  /* Backdrops above are for the hero portrait — a clean, controlled shot whose
+     job is to lock identity. Scenes are where the character actually performs,
+     and they carry the things a stage really has: crowd, haze, beams, gear. */
+  const SCENES = [
+    { id: 'same', he: '— כמו הרקע של ה-hero —', v: '' },
+    { id: 'arena', he: 'אולם הופעות גדול',
+      v: 'on a packed arena stage, volumetric light beams cutting through atmospheric haze, ' +
+        'a sea of out-of-focus faces and raised hands in the crowd, a drum kit and stacked ' +
+        'amplifiers behind, warm bokeh from phone lights, spill light raking across the performer' },
+    { id: 'club', he: 'מועדון קטן ומיוזע',
+      v: 'on a small sweaty club stage, low ceiling, the crowd pressed close to the monitors, ' +
+        'red and amber practicals, thick air, hard shadows' },
+    { id: 'rehearsal', he: 'חדר חזרות',
+      v: 'in a cluttered rehearsal room, amps and cable runs, daylight through a dusty window, ' +
+        'unglamorous and intimate' },
+    { id: 'studio-live', he: 'חדר הקלטות',
+      v: 'in a live recording room, acoustic panels and a large-diaphragm microphone on a boom, ' +
+        'warm practical lamps, headphones around the neck' },
+    { id: 'rooftop', he: 'גג עירוני',
+      v: 'on a city rooftop at blue hour, skyline bokeh behind, wind moving the hair and clothing' },
+    { id: 'void', he: 'חלל שחור (רק הדמות)',
+      v: 'in a pure black void, only the performer and the instrument lit, no environment' }
+  ];
+
+  /* Performance intensity is derived from the song's measured section energy —
+     this is the app's whole premise applied to the character. A quiet intro and
+     a peak chorus should not show the same body. */
+  const INTENSITY = {
+    low: 'composed and still, weight settled, shoulders relaxed, eyes half-closed or ' +
+      'softly down on the fretboard, calm breathing, minimal movement',
+    mid: 'engaged and grooving, head nodding on the beat, weight shifting between the feet, ' +
+      'focused relaxed expression, hair just beginning to move',
+    high: 'full performance intensity, sweat-damp hair falling across the forehead, ' +
+      'forearm muscles engaged and tendons visible, clothing and hair caught mid-motion, ' +
+      'head driven into the beat, eyes squeezed shut or locked down on the fretboard'
+  };
+
   /* Hands are the failure mode. Naming it explicitly, every time, is the
      single highest-leverage line in a musician prompt. */
   const NEGATIVE_BASE = [
@@ -316,7 +353,18 @@
       L.push(`- **Lighting:** ${character.lighting || 'soft key with a cold rim light, gentle volumetric haze'}`);
       if (character.world) L.push(`- **World / setting:** ${character.world}`);
     }
+    const sc = pick(SCENES, character.scene, null);
+    if (sc && sc.v) L.push(`- **Performance scene (all panels):** ${sc.v}`);
     L.push(`- **Reference image:** ${character.portrait ? 'use the attached hero image for identity — do not redesign the character' : 'generate the hero keyframe first, then reuse it'}`);
+    L.push('');
+    L.push('### Performance intensity by section energy');
+    L.push('The body must escalate with the music — a quiet intro and a peak chorus are not the same shot.');
+    for (const k of ['low', 'mid', 'high']) L.push(`- **${k}** — ${INTENSITY[k]}`);
+    if ((character.wardrobeAlt || '').trim()) {
+      L.push('');
+      L.push(`**Wardrobe change:** peak (high-energy) panels wear *${character.wardrobeAlt.trim()}*; ` +
+        'everything else about the character stays identical.');
+    }
     L.push('');
     L.push(`> ${negativeLine(character)}`);
     L.push('');
@@ -335,10 +383,10 @@
       L.push('');
       L.push(`## PANEL SEQUENCE (${panels.length} panels, covering the whole piece)`);
       L.push('');
-      L.push('| # | Time | Sec | Panel | Chord | Hand placement | Movement |');
-      L.push('|---|------|-----|-------|-------|----------------|----------|');
+      L.push('| # | Time | Sec | Energy | Panel | Chord | Hand placement | Movement |');
+      L.push('|---|------|-----|--------|-------|-------|----------------|----------|');
       for (const p of panels) {
-        L.push(`| ${p.index} | ${mmss(p.start)}–${mmss(p.end)} | ${p.section} | ` +
+        L.push(`| ${p.index} | ${mmss(p.start)}–${mmss(p.end)} | ${p.section} | ${p.label} | ` +
           `${p.type.id}${p.isDrop ? ' 💥DROP' : ''} | ${p.chord || '—'} | ${p.hand || '—'} | ${p.movement} |`);
       }
       L.push('');
@@ -386,13 +434,21 @@
     const action = `playing the ${instrumentBlock(character)}` +
       (panel.chord ? `, forming the ${panel.chord} chord — ${exact || panel.hand || ''}` : '') +
       `, ${panel.movement}`;
-    return stack(character, { framing: panel.type.frame, action }) +
-      '\n\n' + negativeLine(character);
+    return stack(character, {
+      framing: panel.type.frame, action,
+      energy: panel.label,
+      intensity: INTENSITY[panel.label] || INTENSITY.mid
+    }) + '\n\n' + negativeLine(character);
   }
 
   /** The identity block — repeated verbatim everywhere, which is what
    *  actually holds a character together across generations. */
-  function identityBlock(c) {
+  /** Wardrobe may change between a calm section and a peak one — the identity
+   *  must not. Everything except the clothes stays byte-identical. */
+  const wardrobeFor = (c, label) =>
+    (label === 'high' && (c.wardrobeAlt || '').trim()) ? c.wardrobeAlt.trim() : (c.wardrobe || '');
+
+  function identityBlock(c, label) {
     const bits = [];
     if (c.age) bits.push(c.age);
     const arch = pick(ARCHETYPES, c.archetype, null);
@@ -401,7 +457,8 @@
     // the user's own features win; the archetype only fills the gap
     const feat = (c.features || '').trim() || (arch && arch.features) || '';
     if (feat) bits.push(feat);
-    if (c.wardrobe) bits.push(`wearing ${c.wardrobe}`);
+    const w = wardrobeFor(c, label);
+    if (w) bits.push(`wearing ${w}`);
     if (isPhotoreal(c)) bits.push(pick(SKIN, c.skin).v);
     return bits.filter(Boolean).join(', ');
   }
@@ -444,13 +501,17 @@
     opts = opts || {};
     const style = pick(STYLES, c.style, STYLES[3]);
     const photo = isPhotoreal(c);
-    const L = [identityBlock(c)];
+    const L = [identityBlock(c, opts.energy)];
     L.push(opts.action || `holding the ${instrumentBlock(c)}`);
+    if (opts.intensity) L.push(opts.intensity);
     L.push(style.anchor);
     if (opts.framing) L.push(opts.framing);
     L.push(photo ? pick(CAMERAS, c.camera).v : (opts.camera || 'medium shot, eye level'));
     L.push(photo ? pick(LIGHTING, c.lighting).v : (c.lighting || 'soft key with a cold rim light'));
-    L.push(c.world || (photo ? pick(BACKDROPS, c.backdrop).v : 'clean studio backdrop'));
+    // panels perform in a scene; the hero sits on a controlled backdrop
+    const scene = opts.scene !== false && pick(SCENES, c.scene, null);
+    L.push((scene && scene.v) || c.world ||
+      (photo ? pick(BACKDROPS, c.backdrop).v : 'clean studio backdrop'));
     L.push(c.palette || PALETTES[0].v);
     if (photo) L.push(RENDER_TOKENS);
     return L.filter(Boolean).join(' — ') + '.';
@@ -465,7 +526,8 @@
     const p = stack(c, {
       framing: 'three-quarter front view, waist-up, confident relaxed pose, both hands clearly ' +
         'visible and correctly placed on the instrument, sharp focus on the hands and eyes',
-      action: `holding the ${instrumentBlock(c)}`
+      action: `holding the ${instrumentBlock(c)}`,
+      scene: false        // the hero is a controlled portrait, not a performance
     });
     return p + '\n\n' + negativeLine(c);
   }
@@ -545,7 +607,7 @@
   global.Characters = {
     STYLES, PALETTES, TOOLS, PANEL_TYPES,
     CAMERAS, LIGHTING, BACKDROPS, SKIN, NEGATIVE_BASE,
-    ARCHETYPES, INSTRUMENT_THEMES, fingeringSection,
+    ARCHETYPES, INSTRUMENT_THEMES, SCENES, INTENSITY, fingeringSection, wardrobeFor,
     isPhotoreal, identityBlock, instrumentBlock,
     buildPanels, masterPrompt, panelPrompt, keyframePrompt,
     characterSheetPrompt, characterBrief, toolParams, mmss
