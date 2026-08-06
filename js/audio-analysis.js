@@ -237,12 +237,16 @@
     return { t, names };
   }
 
-  function detectChords(chroma, framesPerBeat, beatTimes) {
+  function detectChords(chroma, envSr, beatTimes) {
     const { t, names } = chordTemplates();
     const perBeat = [];
     for (let b = 0; b < beatTimes.length; b++) {
-      const start = Math.floor(b * framesPerBeat);
-      const end = Math.min(chroma.length, Math.floor((b + 1) * framesPerBeat));
+      // Window from the beat's real timestamp. Counting frames from zero
+      // ignored firstBeat and slid every chord label off the beat it belongs to.
+      const start = Math.floor(beatTimes[b] * envSr);
+      const end = b + 1 < beatTimes.length
+        ? Math.min(chroma.length, Math.floor(beatTimes[b + 1] * envSr))
+        : chroma.length;
       if (start >= chroma.length) break;
       const acc = new Array(12).fill(0);
       for (let f = start; f < end; f++) for (let i = 0; i < 12; i++) acc[i] += chroma[f][i];
@@ -328,8 +332,7 @@
     const key = estimateKey(mean);
 
     p('מחלץ אקורדים…');
-    const framesPerBeat = tempo.beatLen * envSr;
-    const chords = detectChords(chroma, framesPerBeat, beatTimes);
+    const chords = detectChords(chroma, envSr, beatTimes);
 
     p('מזהה מבנה…');
     const sections = buildSections(rms, envSr, duration, tempo.beatLen, sig);

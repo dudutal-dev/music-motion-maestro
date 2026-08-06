@@ -359,7 +359,7 @@
       L.push(`- **Backdrop:** ${character.world || pick(BACKDROPS, character.backdrop).v}`);
       L.push(`- **Render:** ${RENDER_TOKENS}`);
     } else {
-      L.push(`- **Lighting:** ${character.lighting || 'soft key with a cold rim light, gentle volumetric haze'}`);
+      L.push(`- **Lighting:** ${pick(LIGHTING, character.lighting).v}`);
       if (character.world) L.push(`- **World / setting:** ${character.world}`);
     }
     const sc = pick(SCENES, character.scene, null);
@@ -538,7 +538,7 @@
     L.push(style.anchor);
     if (opts.framing) L.push(opts.framing);
     L.push(photo ? pick(CAMERAS, c.camera).v : (opts.camera || 'medium shot, eye level'));
-    L.push(photo ? pick(LIGHTING, c.lighting).v : (c.lighting || 'soft key with a cold rim light'));
+    L.push(pick(LIGHTING, c.lighting).v);
     // panels perform in a scene; the hero sits on a controlled backdrop
     const scene = opts.scene !== false && pick(SCENES, c.scene, null);
     L.push((scene && scene.v) || c.world ||
@@ -775,17 +775,23 @@
 
     if (tier === 'macro') {
       // Hand first, chord named three times, everything else stripped out.
-      L.push(`Extreme close-up photograph of a guitarist's left hand fretting ${chordSpoken(chord)} ` +
-        `— ${shape} — on ${firstClause(instrumentBlock(c))}.`);
+      L.push(guitar
+        ? `Extreme close-up photograph of a guitarist's left hand fretting ${chordSpoken(chord)} ` +
+          `— ${shape} — on ${firstClause(instrumentBlock(c))}.`
+        : `Extreme close-up photograph of a pianist's hands playing ${chordSpoken(chord)} ` +
+          `on ${firstClause(instrumentBlock(c))}.`);
       L.push('');
       L.push('THE HAND IS THE SUBJECT. Get this exactly right:');
       L.push(visual || exact || '');
       L.push('');
       L.push(`This is the ${chord} chord. ${exact || ''}`);
       L.push('');
-      L.push(`Only the hand, the neck and the fretboard are in frame. ${firstClause(style.anchor)}, ` +
-        'macro lens, tack-sharp on the fingertips, shallow depth of field behind the strings.');
-      L.push('No face, no background, no scene — just the hand on the fretboard.');
+      L.push(guitar
+        ? `Only the hand, the neck and the fretboard are in frame. ${firstClause(style.anchor)}, ` +
+          'macro lens, tack-sharp on the fingertips, shallow depth of field behind the strings.'
+        : `Only the hands and the keys are in frame. ${firstClause(style.anchor)}, ` +
+          'macro lens, tack-sharp on the fingertips, shallow depth of field along the keyboard.');
+      L.push(`No face, no background, no scene — just the ${guitar ? 'hand on the fretboard' : 'hands on the keys'}.`);
       L.push('');
       L.push(negativeLine(c));
       return L.join('\n');

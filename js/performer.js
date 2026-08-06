@@ -640,7 +640,10 @@
     const padX = W * .16, padTop = H * .18, gw = W - padX * 2, gh = H - padTop - H * .1;
     const nStr = 6, nFret = 5;
     const sx = gw / (nStr - 1), sy = gh / nFret;
-    const startFret = f.baseFret > 4 ? f.baseFret : 1;
+    const frettedAll = f.shape.filter(x => typeof x === 'number' && x > 0);
+    const maxFret = frettedAll.length ? Math.max.apply(null, frettedAll) : 0;
+    // Anchor at the nut only when the whole shape fits in the window.
+    const startFret = maxFret <= nFret ? 1 : f.baseFret;
     let s = `<svg class="fretboard-svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">`;
     // nut / position marker
     if (startFret === 1) s += `<rect x="${padX - 2}" y="${padTop - 5}" width="${gw + 4}" height="5" rx="2" fill="#e8e8ee"/>`;
@@ -677,7 +680,9 @@
     const v = MM.pianoVoicing(name, 4);
     const W = width || 300, whiteN = 14, ww = W / whiteN, H = ww * 3.4;
     let s = `<svg class="keyboard-svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">`;
-    const start = 48; // C3
+    // Voicings are built at octave 4, so the window has to start there: from C3
+    // the upper tones of F, G, A, B and friends fell outside and were dropped.
+    const start = 60; // C4
     const midis = [];
     for (let m = start; midis.length < 24; m++) midis.push(m);
     const active = v ? v.keys.map(k => k.midi) : [];

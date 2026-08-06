@@ -1320,9 +1320,12 @@ python scripts/extract_chords.py work/audio.wav --beats work/analysis.json --out
         cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
         cb(cv.toDataURL('image/jpeg', 0.82));
       };
-      img.onerror = () => toast('לא הצלחתי לקרוא את התמונה', true);
+      // Report failure through the callback too. Signalling only via a toast
+      // left bulk callers waiting on a count that could never complete.
+      img.onerror = () => { toast('לא הצלחתי לקרוא את התמונה', true); cb(null); };
       img.src = r.result;
     };
+    r.onerror = () => { toast('לא הצלחתי לקרוא את הקובץ', true); cb(null); };
     r.readAsDataURL(file);
   }
 
@@ -1436,6 +1439,7 @@ python scripts/extract_chords.py work/audio.wav --beats work/analysis.json --out
       inp.onchange = () => {
         const f = inp.files[0]; if (!f) return;
         loadPortrait(f, dataUrl => {
+          if (!dataUrl) return;
           pendingPortrait = dataUrl;
           const prev = $('#c-portrait-prev');
           if (prev) { prev.src = dataUrl; prev.style.display = ''; }
@@ -1496,10 +1500,13 @@ python scripts/extract_chords.py work/audio.wav --beats work/analysis.json --out
         const files = [...inp.files].sort((x, y) => x.name.localeCompare(y.name, undefined, { numeric: true }));
         const slots = MM.CHORD_GROUPS.filter(g => state.posterGroups.includes(g.id)).flatMap(g => g.chords);
         let done = 0;
-        files.slice(0, slots.length).forEach((f, i) => {
+        const total = Math.min(files.length, slots.length);
+        let ok = 0;
+        files.slice(0, total).forEach((f, i) => {
           loadPortrait(f, url => {
-            posterImages[slots[i]] = url;
-            if (++done === Math.min(files.length, slots.length)) { toast(done + ' תמונות שובצו'); render(); }
+            if (url) { posterImages[slots[i]] = url; ok++; }
+            // count every outcome, so one bad file cannot strand the batch
+            if (++done === total) { toast(ok + ' תמונות שובצו'); render(); }
           });
         });
       };
@@ -1518,7 +1525,7 @@ python scripts/extract_chords.py work/audio.wav --beats work/analysis.json --out
       const ch = cell.dataset.cell;
       const inp = document.createElement('input');
       inp.type = 'file'; inp.accept = 'image/*';
-      inp.onchange = () => { const f = inp.files[0]; if (f) loadPortrait(f, url => { posterImages[ch] = url; render(); }); };
+      inp.onchange = () => { const f = inp.files[0]; if (f) loadPortrait(f, url => { if (url) { posterImages[ch] = url; render(); } }); };
       inp.click(); return;
     }
     if (a === 'chord-poster') return chordPosterModal();
