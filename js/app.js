@@ -373,6 +373,12 @@
           `<option value="${x.id}">${esc(x.name)}</option>`).join('')}</select>
       </div>
       <div class="field" style="margin-bottom:14px">
+        <label>רמת צילום</label>
+        <select id="poster-tier">${CH.SHOT_TIERS.map(t =>
+          `<option value="${t.id}" ${t.id === 'balanced' ? 'selected' : ''}>${esc(t.he)}</option>`).join('')}</select>
+        <div class="hint" id="poster-tier-note"></div>
+      </div>
+      <div class="field" style="margin-bottom:14px">
         <label>קבוצות אקורדים</label>
         <div class="chips" id="poster-groups">
           ${MM.CHORD_GROUPS.map((g, i) =>
@@ -389,13 +395,25 @@
 
     const rebuild = () => {
       const ch = Store.getCharacter($('#poster-char').value) || c;
+      const tierId = $('#poster-tier').value;
+      const tier = CH.SHOT_TIERS.find(t => t.id === tierId);
+      $('#poster-tier-note').textContent = tier ? tier.note : '';
       const on = [...document.querySelectorAll('#poster-groups .chip.active')].map(b => b.dataset.group);
       const groups = MM.CHORD_GROUPS.filter(g => on.includes(g.id));
-      $('#poster-text').value = groups.length
-        ? CH.chordPosterPrompts(ch, groups)
-        : 'בחר לפחות קבוצת אקורדים אחת.';
+      if (!groups.length) { $('#poster-text').value = 'בחר לפחות קבוצת אקורדים אחת.'; return; }
+      // One ready prompt per chord at the chosen tier, plus the shared setup.
+      const L = [CH.chordPosterPrompts(ch, groups), '', '---', '',
+        `# פרומפט מוכן לכל אקורד — ${tier ? tier.he : tierId}`, ''];
+      for (const g of groups) {
+        L.push('## ' + g.he, '');
+        for (const chord of g.chords) {
+          L.push('### ' + chord, '```', CH.chordShotPrompt(ch, chord, tierId), '```', '');
+        }
+      }
+      $('#poster-text').value = L.join('\n');
     };
     $('#poster-char').addEventListener('change', rebuild);
+    $('#poster-tier').addEventListener('change', rebuild);
     $('#poster-groups').addEventListener('click', e => {
       const b = e.target.closest('[data-group]');
       if (b) { b.classList.toggle('active'); rebuild(); }

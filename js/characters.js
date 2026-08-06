@@ -721,6 +721,89 @@
     return L.join('\n');
   }
 
+  /* ============================================================
+     Chord shot tiers
+     A chord panel and a hero shot want opposite things. The hero wants
+     the whole performer in a big scene; the chord wants one hand, big,
+     with nothing competing for the model's attention. Trying to get both
+     from one prompt is what produced hands gripping the neck: the hand
+     instruction sat fourth in the prompt, behind an ornate guitar, an
+     arena and a wardrobe, all of which the model spent its attention on.
+     ============================================================ */
+  const SHOT_TIERS = [
+    { id: 'macro', he: 'מאקרו — דיוק מרבי',
+      note: 'רק היד והצוואר בפריים. הכי אמין לאצבוע נכון; הפנים לא נראים.' },
+    { id: 'balanced', he: 'מאוזן — חצי גוף',
+      note: 'הדמות מזוהה והיד בחזית וקרובה. זה מה שפוסטר אקורדים צריך.' },
+    { id: 'wide', he: 'רחב — יופי',
+      note: 'סצנה מלאה. יפה, אבל היד קטנה בפריים ולכן פחות אמינה.' }
+  ];
+
+  const chordSpoken = chord => {
+    const p = MM.parseChord(chord);
+    if (!p) return chord;
+    const q = { '': ' major', 'm': ' minor', '7': ' dominant seventh', 'm7': ' minor seventh',
+      'maj7': ' major seventh', 'sus2': ' suspended second', 'sus4': ' suspended fourth' }[p.suffix] || '';
+    return p.root + q;
+  };
+
+  /**
+   * One chord, one image, at a chosen level of ambition.
+   * The macro tier deliberately drops almost everything: in a shot that
+   * never shows a face, wardrobe and backdrop are pure competition.
+   */
+  function chordShotPrompt(c, chord, tierId) {
+    const tier = tierId || 'balanced';
+    const visual = MM.visualFingering(chord, c.instrument);
+    const exact = MM.fingeringSentence(chord, c.instrument);
+    const spoken = chordSpoken(chord);
+    const guitar = c.instrument !== 'piano';
+    const open = guitar && (MM.guitarFingering(chord) || {}).hasOpen;
+    const barre = guitar && (MM.guitarFingering(chord) || {}).barre;
+    const shape = barre ? 'a barre chord shape' : open ? 'an open chord shape' : 'a movable chord shape';
+    const style = pick(STYLES, c.style, STYLES[3]);
+    const L = [];
+
+    if (tier === 'macro') {
+      // Hand first, chord named three times, everything else stripped out.
+      L.push(`Extreme close-up photograph of a guitarist's left hand fretting ${chordSpoken(chord)} ` +
+        `— ${shape} — on ${firstClause(instrumentBlock(c))}.`);
+      L.push('');
+      L.push('THE HAND IS THE SUBJECT. Get this exactly right:');
+      L.push(visual || exact || '');
+      L.push('');
+      L.push(`This is the ${chord} chord. ${exact || ''}`);
+      L.push('');
+      L.push(`Only the hand, the neck and the fretboard are in frame. ${firstClause(style.anchor)}, ` +
+        'macro lens, tack-sharp on the fingertips, shallow depth of field behind the strings.');
+      if (c.description) L.push(`Same player as the reference: ${firstClause(c.description)}.`);
+      L.push('');
+      L.push(negativeLine(c));
+      return L.join('\n');
+    }
+
+    if (tier === 'balanced') {
+      L.push(`A waist-up photograph of ${identityBlock(c, 'mid')}, playing ${instrumentBlock(c)}.`);
+      L.push('');
+      L.push(`THE CHORD — ${chordSpoken(chord)} (${chord}), ${shape}. The fretting hand is in the ` +
+        'foreground, closest to the camera, large in frame and tack-sharp:');
+      L.push(visual || exact || '');
+      L.push('');
+      L.push('The instrument is angled so the face of the fretboard is turned toward the camera and ' +
+        'the fingertips are unobstructed.');
+      L.push(`Style and light: ${firstClause(style.anchor)}; ${firstClause(pick(LIGHTING, c.lighting).v)}; ` +
+        `${firstClause(c.world || pick(BACKDROPS, c.backdrop).v)} kept simple and out of focus so nothing ` +
+        'competes with the hand.');
+      if (c.portrait) L.push('Use the attached image for the face, hair, wardrobe and instrument.');
+      L.push('');
+      L.push(negativeLine(c));
+      return L.join('\n');
+    }
+
+    // wide — the full scene; accept that the hand is small and less reliable
+    return gptPrompt(c, { chord, label: 'mid', type: PANEL_TYPES[1], movement: '' });
+  }
+
   /** Catch the things that quietly ruin a generation before the user pastes it. */
   function promptHealth(text, c, panel) {
     const words = String(text).trim().split(/\s+/).length;
@@ -849,6 +932,7 @@
     CAMERAS, LIGHTING, BACKDROPS, SKIN, NEGATIVE_BASE,
     ARCHETYPES, INSTRUMENT_THEMES, SCENES, INTENSITY, fingeringSection, wardrobeFor,
     compactPrompt, gptPrompt, shortHand, promptHealth, chordPosterPrompts,
+    SHOT_TIERS, chordShotPrompt, chordSpoken,
     isPhotoreal, identityBlock, instrumentBlock,
     buildPanels, masterPrompt, panelPrompt, keyframePrompt,
     characterSheetPrompt, characterBrief, toolParams, mmss
