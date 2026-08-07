@@ -25,6 +25,7 @@
     stageMode: 'anim',
     chordInst: 'guitar',
     posterGroups: ['major', 'minor', 'seventh', 'sus'],
+    posterChar: null,
     transpose: 0,
     capo: 0,
     loop: null,
@@ -266,8 +267,22 @@
             <div class="chips">
               <button class="chip ${state.stageMode !== 'hero' ? 'active' : ''}" data-mode="anim">🎬 אנימציה</button>
               <button class="chip ${state.stageMode === 'hero' ? 'active' : ''}" data-mode="hero"
-                ${state.stageChar && state.stageChar.portrait ? '' : 'disabled title="צרף תמונה לדמות כדי להפעיל"'}>🖼️ דמות ריאליסטית</button>
+                ${state.stageChar && state.stageChar.portrait ? '' : 'disabled'}>🖼️ דמות ריאליסטית</button>
             </div>
+            ${(() => {
+              // A greyed-out button with a hover tooltip explains nothing — least
+              // of all on a touch screen. Say what is missing, and offer the fix.
+              if (state.stageChar && state.stageChar.portrait) return '';
+              const named = state.stageChar && state.stageChar.id;
+              return `<div class="hint" style="margin-top:9px">
+                ${named
+                  ? `ל<b>${esc(state.stageChar.name)}</b> אין תמונה מצורפת, ולכן התצוגה
+                     הריאליסטית כבויה. האנימציה עובדת — אבל היא לא מציגה את הדמות עצמה.`
+                  : 'בחר דמות למטה, וצרף לה תמונה כדי להפעיל את התצוגה הריאליסטית.'}
+                ${named ? `<button class="btn btn-sm" style="margin-top:9px"
+                   data-action="edit-char" data-id="${state.stageChar.id}">צרף תמונה לדמות</button>` : ''}
+              </div>`;
+            })()}
             <h3 style="margin-top:16px">כלי נגינה</h3>
             <div class="chips">
               <button class="chip ${(!state.stageChar || state.stageChar.instrument !== 'piano') ? 'active' : ''}" data-inst="guitar">🎸 גיטרה</button>
@@ -453,7 +468,8 @@
     </div>`;
   }
 
-  function chordPosterModal() {
+  /** @param charId  preselect this character  @param groupIds  preselect these groups */
+  function chordPosterModal(charId, groupIds) {
     const chars = Store.state.characters;
     if (!chars.length) {
       return modal('פוסטר אקורדים', `<div class="empty">
@@ -462,12 +478,13 @@
         `<button class="btn btn-primary" data-action="new-character">צור דמות</button>
          <button class="btn btn-ghost" data-action="close-modal">סגור</button>`);
     }
-    const c = chars[0];
+    const c = (charId && Store.getCharacter(charId)) || chars[0];
+    const wanted = groupIds && groupIds.length ? groupIds : null;
     modal('פוסטר אקורדים עם דמות', `
       <div class="field" style="margin-bottom:14px">
         <label>דמות</label>
         <select id="poster-char">${chars.map(x =>
-          `<option value="${x.id}">${esc(x.name)}</option>`).join('')}</select>
+          `<option value="${x.id}" ${x.id === c.id ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select>
       </div>
       <div class="field" style="margin-bottom:14px">
         <label>רמת צילום</label>
@@ -479,7 +496,8 @@
         <label>קבוצות אקורדים</label>
         <div class="chips" id="poster-groups">
           ${MM.CHORD_GROUPS.map((g, i) =>
-            `<button class="chip ${i < 4 ? 'active' : ''}" data-group="${g.id}">${esc(g.he)}</button>`).join('')}
+            `<button class="chip ${wanted ? (wanted.includes(g.id) ? 'active' : '') : (i < 4 ? 'active' : '')}"
+               data-group="${g.id}">${esc(g.he)}</button>`).join('')}
         </div>
       </div>
       <div class="field">
@@ -606,6 +624,29 @@
             `<button class="chip ${state.posterGroups.includes(g.id) ? 'active' : ''}" data-pgroup="${g.id}">${esc(g.he)}</button>`).join('')}
           <span class="pill" style="margin-inline-start:auto">${filled}/${total} תאים</span>
         </div>
+        ${(() => {
+          /* The prompts that produce these images are generated per character,
+             but that lived only on the chord-library screen — so from here there
+             was no visible connection between a poster and the character it is
+             supposed to show. Close the loop where the poster is actually built. */
+          const chars = Store.state.characters;
+          if (!chars.length) {
+            return `<div class="hint" style="margin-top:14px">
+              הפוסטר מציג את אותה דמות מנגנת כל אקורד.
+              <button class="btn btn-sm" style="margin-top:8px" data-action="new-character">צור דמות</button>
+            </div>`;
+          }
+          return `<div class="field" style="max-width:340px;margin-top:16px">
+            <label>הדמות של הפוסטר</label>
+            <select id="poster-owner">
+              ${chars.map(c => `<option value="${c.id}" ${state.posterChar === c.id ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}
+            </select>
+            <div class="hint">ממנה נבנים הפרומפטים — אותה דמות נעולה בכל תא, רק היד משתנה.</div>
+            <button class="btn btn-sm" style="margin-top:10px" data-action="poster-prompts">
+              קבל פרומפטים לאקורדים שנבחרו
+            </button>
+          </div>`;
+        })()}
         <div style="display:flex;gap:10px;margin-top:14px;flex-wrap:wrap">
           <button class="btn" data-action="poster-bulk">בחר תמונות בכמות</button>
           <button class="btn btn-primary" data-action="poster-export" ${filled ? '' : 'disabled'}>הורד פוסטר PNG</button>
@@ -883,6 +924,7 @@ python scripts/build_sync_map.py work/analysis.json --chords work/chords.json --
       state.performer = PF.create(holder);
       state.performer.setInstrument(
         state.stageChar && state.stageChar.instrument === 'piano' ? 'piano' : 'guitar');
+      state.performer.setPalette(state.stageChar && state.stageChar.palette);
     }
     if (hud) host.appendChild(hud);
 
@@ -1763,6 +1805,12 @@ python scripts/extract_chords.py work/audio.wav --beats work/analysis.json --out
     }
     if (a === 'clear-loop') { state.loop = null; return render(); }
     if (a === 'poster-export') return exportPoster();
+    if (a === 'poster-prompts') {
+      const sel = $('#poster-owner');
+      if (sel) state.posterChar = sel.value;
+      // Hand the generator the groups this poster is actually built from.
+      return chordPosterModal(state.posterChar, state.posterGroups);
+    }
     if (a === 'poster-clear') {
       Object.keys(posterImages).forEach(k => delete posterImages[k]);
       if (postersPersist) MM.Posters.clear().catch(() => {});

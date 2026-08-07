@@ -17,6 +17,18 @@
   const NS = 'http://www.w3.org/2000/svg';
   const MM = global.MM;
 
+  /* Wardrobe colours per character palette, keyed by the palette string the
+     character carries. Two stops each: lit side, shadow side. */
+  const WARDROBE = {
+    'deep teal, magenta, near-black':      ['#1d5f5c', '#0d2422'],
+    'amber gold, warm cream, dusty brown': ['#8a6432', '#3b2a14'],
+    'midnight blue, ice white, soft cyan': ['#2b3550', '#141a2a'],
+    'crimson red, charcoal, bone white':   ['#7a2230', '#2a1015'],
+    'blush pink, mint, pale sand':         ['#b58497', '#5c3f4a'],
+    'black, white, single accent gray':    ['#3a3a3f', '#161618'],
+    _default:                              ['#2b3550', '#141a2a']
+  };
+
   const el = (tag, attrs) => {
     const n = document.createElementNS(NS, tag);
     if (attrs) for (const k in attrs) n.setAttribute(k, attrs[k]);
@@ -128,6 +140,7 @@
     let keys = [];
     let currentChord = null;
     let smoothSway = 0, smoothStrum = 0;
+    let paletteKey = null;
 
     function defs() {
       const d = el('defs');
@@ -620,11 +633,28 @@
       instrument = inst === 'piano' ? 'piano' : 'guitar';
       currentChord = null;
       if (instrument === 'guitar') buildGuitar(); else buildPiano();
+      applyPalette();      // the rebuild replaces the defs, so re-tint after it
     }
+
+    /* Choosing a character used to change nothing on stage unless it also
+       changed the instrument, which made the picker look broken. The drawn
+       performer cannot carry a likeness, but it can carry the character's
+       colours, so the choice is at least visible. */
+    function applyPalette() {
+      if (!svg) return;
+      const cloth = svg.querySelector('#mm-cloth');
+      if (!cloth) return;
+      const stops = cloth.querySelectorAll('stop');
+      if (stops.length < 2) return;
+      const pair = WARDROBE[paletteKey] || WARDROBE._default;
+      stops[0].setAttribute('stop-color', pair[0]);
+      stops[1].setAttribute('stop-color', pair[1]);
+    }
+    function setPalette(colors) { paletteKey = colors; applyPalette(); }
 
     setInstrument('guitar');
     return {
-      update, setInstrument,
+      update, setInstrument, setPalette,
       get instrument() { return instrument; },
       refreshChord() { const c = currentChord; currentChord = null; setChord(c); }
     };
