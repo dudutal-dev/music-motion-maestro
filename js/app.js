@@ -26,6 +26,7 @@
     chordInst: 'guitar',
     posterGroups: ['major', 'minor', 'seventh', 'sus'],
     posterChar: null,
+    stageBackdrop: 'dark',
     transpose: 0,
     capo: 0,
     loop: null,
@@ -274,11 +275,19 @@
               // Say how many are in play, so a still hero is never a mystery.
               if (!(state.stageChar && state.stageChar.portrait)) return '';
               const n = Object.keys(posterImages).length;
+              const backdrops = [['dark', 'אולם חשוך'], ['stage', 'במה'],
+                                 ['warm', 'שעת זהב'], ['none', 'ללא']];
               return `<div class="hint" style="margin-top:9px">${n
                 ? `<b>${n}</b> תמונות אקורד מהפוסטר — התמונה מתחלפת עם האקורד.`
                 : 'אין תמונות אקורד. הדמות תישאר על תמונה אחת — הרכב פוסטר כדי שהיא תתחלף לפי האקורד.'}
                 ${n ? '' : '<button class="btn btn-sm" style="margin-top:9px" data-route="poster">להרכבת פוסטר</button>'}
-              </div>`;
+              </div>
+              <h3 style="margin-top:16px">רקע הבמה</h3>
+              <div class="chips">
+                ${backdrops.map(([v, he]) =>
+                  `<button class="chip ${(state.stageBackdrop || 'dark') === v ? 'active' : ''}" data-bd="${v}">${he}</button>`).join('')}
+              </div>
+              <div class="hint" style="margin-top:7px">נראה רק כשהתמונות חתוכות מהרקע.</div>`;
             })()}
             ${(() => {
               // A greyed-out button with a hover tooltip explains nothing — least
@@ -593,6 +602,7 @@
      since the view is synchronous and IndexedDB is not. */
   const posterImages = {};
   let postersLoaded = false, postersPersist = true;
+  let posterBackup = null;      // pre-cut-out originals, for undo
 
   /** Fills the mirror from storage once, then re-renders if the user is looking. */
   function loadPosters() {
@@ -687,10 +697,19 @@
         })()}
         <div style="display:flex;gap:10px;margin-top:14px;flex-wrap:wrap">
           <button class="btn" data-action="poster-bulk">בחר תמונות בכמות</button>
+          <button class="btn" data-action="poster-cutout" ${filled ? '' : 'disabled'}>הסר רקע מכולן</button>
+          ${posterBackup ? '<button class="btn btn-ghost" data-action="poster-undo-cutout">בטל הסרת רקע</button>' : ''}
           <button class="btn btn-primary" data-action="poster-export" ${filled ? '' : 'disabled'}>הורד פוסטר PNG</button>
           <button class="btn btn-ghost" data-action="poster-clear" ${filled ? '' : 'disabled'}>נקה</button>
         </div>
         <div class="hint" style="margin-top:8px">בבחירה בכמות: מיין את הקבצים לפי שם והם ישובצו לפי הסדר.</div>
+        <div class="hint" style="margin-top:6px">
+          <b>הסרת רקע</b> חותכת את הדמות מהרקע, כך שבבמה יישאר רקע אחד קבוע ורק
+          הנגן יתחלף — זה מה שגורם לרצף להיראות מתמשך ולא כמו מצגת שקופיות.
+          עובד מצוין על רקע אחיד, פחות טוב על סצנה עמוסה. אפשר לבטל אחרי שרואים את התוצאה.
+          לתמונות הבאות — בחר בדמות <b>רקע להסרה — לבמה החיה</b>, והפרומפט יבקש רקע שטוח
+          שנחתך נקי.
+        </div>
       </div>
       ${groups.map(g => `
         <div class="section-head"><div class="section-title">${esc(g.he)}</div></div>
@@ -949,7 +968,8 @@ python scripts/build_sync_map.py work/analysis.json --chords work/chords.json --
       const wrap = document.createElement('div');
       wrap.className = 'hero-stage';
       wrap.innerHTML =
-        `<div class="hero-frames" id="hero-frames">
+        `<div class="hero-backdrop" data-bd="${esc(state.stageBackdrop || 'dark')}"></div>
+         <div class="hero-frames" id="hero-frames">
            <img id="hero-img" class="hero-layer show" src="${state.stageChar.portrait}" alt="">
            <img id="hero-img-alt" class="hero-layer" alt="">
          </div>
@@ -1665,6 +1685,91 @@ python scripts/extract_chords.py work/audio.wav --beats work/analysis.json --out
 
   let pendingPortrait = null;
 
+  /**
+   * Cuts the backdrop away from a generated frame.
+   *
+   * Swapping whole photographs changes the background with every chord, which
+   * reads as a slideshow rather than a performance. With the backdrop removed
+   * the stage keeps one scene and only the player changes, which is what makes
+   * the sequence look continuous.
+   *
+   * The method is a flood fill inward from the edges, keeping pixels within a
+   * tolerance of the border colour. That is exact for the flat studio backdrops
+   * these prompts produce and unreliable for busy scenes — so it is offered as
+   * a step the user applies and can see, never something done silently on
+   * import. Edges get a soft alpha ramp so the cut-out does not look stamped.
+   */
+  function cutOutBackground(dataURL, tolerance, cb) {
+    const img = new Image();
+    img.onload = () => {
+      const w = img.width, h = img.height;
+      const cv = document.createElement('canvas');
+      cv.width = w; cv.height = h;
+      const ctx = cv.getContext('2d');
+      ctx.drawImage(img, 0, 0);
+      const id = ctx.getImageData(0, 0, w, h), d = id.data;
+
+      // Reference colour: the average of the four corners, which on a flat
+      // backdrop agree and on a busy one disagree enough to fail visibly.
+      const corner = (x, y) => { const i = (y * w + x) * 4; return [d[i], d[i + 1], d[i + 2]]; };
+      const cs = [corner(0, 0), corner(w - 1, 0), corner(0, h - 1), corner(w - 1, h - 1)];
+      const ref = [0, 1, 2].map(c => cs.reduce((s, k) => s + k[c], 0) / 4);
+
+      const tol2 = tolerance * tolerance;
+      const near = i => {
+        const dr = d[i] - ref[0], dg = d[i + 1] - ref[1], db = d[i + 2] - ref[2];
+        return dr * dr + dg * dg + db * db <= tol2;
+      };
+
+      // Flood fill from every border pixel; interior background enclosed by the
+      // subject is deliberately kept, so gaps under an arm stay opaque.
+      const seen = new Uint8Array(w * h);
+      const stack = [];
+      for (let x = 0; x < w; x++) { stack.push(x, 0, x, h - 1); }
+      for (let y = 0; y < h; y++) { stack.push(0, y, w - 1, y); }
+      while (stack.length) {
+        const y = stack.pop(), x = stack.pop();
+        if (x < 0 || y < 0 || x >= w || y >= h) continue;
+        const p = y * w + x;
+        if (seen[p]) continue;
+        const i = p * 4;
+        if (!near(i)) continue;
+        seen[p] = 1;
+        d[i + 3] = 0;
+        stack.push(x + 1, y, x - 1, y, x, y + 1, x, y - 1);
+      }
+
+      // Soften the boundary: a pixel that survived but touches a removed one
+      // gets partial alpha, which hides the hard staircase edge.
+      const out = new Uint8ClampedArray(d);
+      for (let y = 1; y < h - 1; y++) {
+        for (let x = 1; x < w - 1; x++) {
+          const p = y * w + x;
+          if (seen[p]) continue;
+          let cut = 0;
+          if (seen[p - 1]) cut++;
+          if (seen[p + 1]) cut++;
+          if (seen[p - w]) cut++;
+          if (seen[p + w]) cut++;
+          if (cut) out[p * 4 + 3] = Math.round(255 * (1 - cut / 5));
+        }
+      }
+      ctx.putImageData(new ImageData(out, w, h), 0, 0);
+
+      const removed = seen.reduce((s, v) => s + v, 0) / (w * h);
+      cb(cv.toDataURL('image/png'), removed);
+    };
+    img.onerror = () => cb(null, 0);
+    img.src = dataURL;
+  }
+
+  /** True when any pixel is not fully opaque — i.e. the image has a cut-out. */
+  function hasAlpha(cv) {
+    const d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data;
+    for (let i = 3; i < d.length; i += 4) if (d[i] < 250) return true;
+    return false;
+  }
+
   /** Downscale before storing: localStorage is ~5MB and a raw render blows it. */
   function loadPortrait(file, cb) {
     const r = new FileReader();
@@ -1676,7 +1781,10 @@ python scripts/extract_chords.py work/audio.wav --beats work/analysis.json --out
         const cv = document.createElement('canvas');
         cv.width = Math.round(img.width * k); cv.height = Math.round(img.height * k);
         cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
-        cb(cv.toDataURL('image/jpeg', 0.82));
+        // JPEG has no alpha channel, so encoding a cut-out as JPEG silently
+        // fills the transparency with black. Keep PNG when there is something
+        // to preserve, and take the smaller JPEG when there is not.
+        cb(hasAlpha(cv) ? cv.toDataURL('image/png') : cv.toDataURL('image/jpeg', 0.82));
       };
       // Report failure through the callback too. Signalling only via a toast
       // left bulk callers waiting on a count that could never complete.
@@ -1847,6 +1955,37 @@ python scripts/extract_chords.py work/audio.wav --beats work/analysis.json --out
     }
     if (a === 'clear-loop') { state.loop = null; return render(); }
     if (a === 'poster-export') return exportPoster();
+    if (a === 'poster-cutout') {
+      const chords = Object.keys(posterImages);
+      if (!chords.length) return;
+      // Keep the originals so a bad cut can be undone rather than redone.
+      posterBackup = Object.assign({}, posterImages);
+      let done = 0, weak = 0;
+      toast('מסיר רקע…');
+      chords.forEach(ch => {
+        cutOutBackground(posterImages[ch], 62, (url, removed) => {
+          if (url && removed > 0.06) { posterImages[ch] = url; persistPoster(ch, url); }
+          else weak++;                       // nothing meaningful came off
+          if (++done === chords.length) {
+            toast(weak
+              ? `הרקע הוסר מ-${chords.length - weak}; ב-${weak} הרקע לא אחיד מספיק`
+              : `הרקע הוסר מ-${chords.length} תמונות`);
+            render();
+          }
+        });
+      });
+      return;
+    }
+    if (a === 'poster-undo-cutout') {
+      if (!posterBackup) return;
+      Object.keys(posterBackup).forEach(ch => {
+        posterImages[ch] = posterBackup[ch];
+        persistPoster(ch, posterBackup[ch]);
+      });
+      posterBackup = null;
+      toast('הרקע הוחזר');
+      return render();
+    }
     if (a === 'poster-prompts') {
       const sel = $('#poster-owner');
       if (sel) state.posterChar = sel.value;
@@ -2042,6 +2181,13 @@ python scripts/extract_chords.py work/audio.wav --beats work/analysis.json --out
     if (mode && !mode.disabled) {
       state.stageMode = mode.dataset.mode;
       lastReadoutChord = null;
+      return render();
+    }
+
+    // stage backdrop
+    const bd = e.target.closest('[data-bd]');
+    if (bd && bd.classList.contains('chip')) {
+      state.stageBackdrop = bd.dataset.bd;
       return render();
     }
 

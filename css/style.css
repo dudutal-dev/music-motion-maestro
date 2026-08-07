@@ -333,6 +333,27 @@ a { color: inherit; text-decoration: none; }
 .hud-pill b { color: var(--accent); }
 /* hero mode: the realistic render on stage, fingering overlaid */
 .hero-stage { position: relative; aspect-ratio: 16/10; overflow: hidden; background: #000; }
+/* The scene a cut-out performer stands in. It sits behind both frames, so it
+   stays put while the player changes with the chord — which is the whole point
+   of removing the backdrop from the generated images. */
+.hero-backdrop { position: absolute; inset: 0; }
+.hero-backdrop[data-bd="dark"] {
+  background:
+    radial-gradient(120% 80% at 50% 8%, #1b2330 0%, #0b0d12 58%, #050507 100%);
+}
+.hero-backdrop[data-bd="stage"] {
+  background:
+    radial-gradient(58% 44% at 50% 4%, rgba(0,229,208,.30), transparent 70%),
+    radial-gradient(46% 60% at 16% 100%, rgba(53,160,255,.20), transparent 72%),
+    radial-gradient(46% 60% at 84% 100%, rgba(209,60,140,.18), transparent 72%),
+    #06070b;
+}
+.hero-backdrop[data-bd="warm"] {
+  background:
+    radial-gradient(90% 70% at 50% 12%, #6b4a22 0%, #2a1c0d 60%, #100a05 100%);
+}
+.hero-backdrop[data-bd="none"] { background: #000; }
+
 /* Two stacked frames so a chord change crossfades instead of blinking. The
    pulse transform lives on the wrapper, so both frames move together and the
    fingering overlay stays put. */

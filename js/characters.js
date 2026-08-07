@@ -90,6 +90,15 @@
   const BACKDROPS = [
     { id: 'black-seamless', he: 'רקע שחור נקי (כמו הייחוס)',
       v: 'pure black seamless studio backdrop, subject fully separated from the background' },
+    /* For frames destined for the live stage. The app cuts the backdrop away so
+       one scene can stay put while only the player changes, and that cut is a
+       flood fill from the edges — it is exact against a flat, even colour and
+       unreliable against gradients, texture or a shadow falling on the wall. */
+    { id: 'cutout', he: 'רקע להסרה — לבמה החיה',
+      v: 'flat uniform chroma-key backdrop in one solid saturated green, perfectly even edge to ' +
+         'edge with no gradient, no texture, no vignette and no shadow cast onto it, the subject ' +
+         'lit separately and fully separated from it with clean unblurred edges, nothing in the ' +
+         'wardrobe or instrument in that same green' },
     { id: 'grey-seamless', he: 'רקע אפור סטודיו', v: 'neutral grey seamless studio backdrop with a soft gradient' },
     { id: 'wood-studio', he: 'חדר הקלטות מעץ',
       v: 'warm wooden recording studio, acoustic panels and cables softly out of focus behind the subject' },
