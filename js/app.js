@@ -270,6 +270,17 @@
                 ${state.stageChar && state.stageChar.portrait ? '' : 'disabled'}>🖼️ דמות ריאליסטית</button>
             </div>
             ${(() => {
+              // In realistic mode the poster supplies a real photo per chord.
+              // Say how many are in play, so a still hero is never a mystery.
+              if (!(state.stageChar && state.stageChar.portrait)) return '';
+              const n = Object.keys(posterImages).length;
+              return `<div class="hint" style="margin-top:9px">${n
+                ? `<b>${n}</b> תמונות אקורד מהפוסטר — התמונה מתחלפת עם האקורד.`
+                : 'אין תמונות אקורד. הדמות תישאר על תמונה אחת — הרכב פוסטר כדי שהיא תתחלף לפי האקורד.'}
+                ${n ? '' : '<button class="btn btn-sm" style="margin-top:9px" data-route="poster">להרכבת פוסטר</button>'}
+              </div>`;
+            })()}
+            ${(() => {
               // A greyed-out button with a hover tooltip explains nothing — least
               // of all on a touch screen. Say what is missing, and offer the fix.
               if (state.stageChar && state.stageChar.portrait) return '';
@@ -587,15 +598,42 @@
   function loadPosters() {
     if (postersLoaded) return Promise.resolve();
     postersLoaded = true;
+    const redraw = () => {
+      // The stage draws from these too, so it needs the same nudge.
+      if (state.route === 'poster' || state.route === 'stage') render();
+    };
     return MM.Posters.all().then(map => {
       Object.assign(posterImages, map);
-      if (state.route === 'poster') render();
+      redraw();
     }).catch(() => {
       // Private browsing disables IndexedDB. Keep working for this session and
       // say so, rather than failing silently and losing the work again later.
       postersPersist = false;
-      if (state.route === 'poster') render();
+      redraw();
     });
+  }
+
+  /**
+   * Puts the right photograph on the hero stage for the chord being played.
+   *
+   * The realistic view was a single portrait that never changed, so the
+   * character stood still through the whole song. The poster is already a
+   * photograph of that character per chord, which is exactly the frame this
+   * needs — so the stage draws from it, and falls back to the portrait for
+   * chords with no image yet. Two stacked frames crossfade the change.
+   */
+  function setHeroImage(chord) {
+    const a = $('#hero-img'), alt = $('#hero-img-alt');
+    if (!a || !alt) return;
+    const want = (chord && posterImages[chord]) ||
+                 (state.stageChar && state.stageChar.portrait);
+    if (!want) return;
+    const showing = a.classList.contains('show') ? a : alt;
+    if (showing.getAttribute('src') === want) return;
+    const hidden = showing === a ? alt : a;
+    hidden.setAttribute('src', want);
+    hidden.classList.add('show');
+    showing.classList.remove('show');
   }
 
   /** Writes through to storage; the caller has already updated the mirror. */
@@ -866,7 +904,7 @@ python scripts/build_sync_map.py work/analysis.json --chords work/chords.json --
   function render() {
     renderSidebar();
     if (state.route === 'stage' || state.route === 'chart') ensureStageTrack();
-    if (state.route === 'poster') loadPosters();
+    if (state.route === 'poster' || state.route === 'stage') loadPosters();
     if (state.route === 'settings') {
       loadPosters().then(() => {
         const el = $('#backup-posters');
@@ -911,7 +949,10 @@ python scripts/build_sync_map.py work/analysis.json --chords work/chords.json --
       const wrap = document.createElement('div');
       wrap.className = 'hero-stage';
       wrap.innerHTML =
-        `<img id="hero-img" src="${state.stageChar.portrait}" alt="">
+        `<div class="hero-frames" id="hero-frames">
+           <img id="hero-img" class="hero-layer show" src="${state.stageChar.portrait}" alt="">
+           <img id="hero-img-alt" class="hero-layer" alt="">
+         </div>
          <div class="hero-overlay">
            <div class="hero-chord" id="hero-chord">—</div>
            <div class="hero-hand" id="hero-hand"></div>
@@ -968,11 +1009,11 @@ python scripts/build_sync_map.py work/analysis.json --chords work/chords.json --
     } else if (state.stageMode === 'hero') {
       // A still render can't fret a chord, but it can breathe with the music:
       // a subtle push on each beat keeps the hero alive without faking playing.
-      const img = $('#hero-img');
-      if (img) {
+      const frames = $('#hero-frames');
+      if (frames) {
         const pulse = P.playing ? Math.max(0, 1 - beat.phase * 3.2) * (beat.isDown ? 1 : .55) : 0;
         const sway = P.playing ? Math.sin((beat.index % 8 + beat.phase) / 8 * Math.PI * 2) : 0;
-        img.style.transform =
+        frames.style.transform =
           `scale(${(1.015 + pulse * 0.02 * energy).toFixed(4)}) translateX(${(sway * 6 * energy).toFixed(2)}px)`;
       }
       const hc = $('#hero-chord');
@@ -1061,6 +1102,7 @@ python scripts/build_sync_map.py work/analysis.json --chords work/chords.json --
     if (hh) hh.textContent = handText;
     if (hd) hd.innerHTML = diagram;
     if (hc) hc.textContent = chord;
+    setHeroImage(chord);
     document.querySelectorAll('.next-chord').forEach(n =>
       n.classList.toggle('current', n.dataset.c === chord));
   }

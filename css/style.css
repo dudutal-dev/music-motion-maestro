@@ -333,11 +333,19 @@ a { color: inherit; text-decoration: none; }
 .hud-pill b { color: var(--accent); }
 /* hero mode: the realistic render on stage, fingering overlaid */
 .hero-stage { position: relative; aspect-ratio: 16/10; overflow: hidden; background: #000; }
-.hero-stage img {
-  width: 100%; height: 100%; object-fit: contain; object-position: center;
-  display: block; transform-origin: 50% 62%;
-  transition: transform .06s linear;
+/* Two stacked frames so a chord change crossfades instead of blinking. The
+   pulse transform lives on the wrapper, so both frames move together and the
+   fingering overlay stays put. */
+.hero-frames {
+  position: absolute; inset: 0;
+  transform-origin: 50% 62%; transition: transform .06s linear;
 }
+.hero-stage img.hero-layer {
+  position: absolute; inset: 0;
+  width: 100%; height: 100%; object-fit: contain; object-position: center;
+  display: block; opacity: 0; transition: opacity .3s var(--ease);
+}
+.hero-stage img.hero-layer.show { opacity: 1; }
 .hero-overlay {
   position: absolute; inset-block-end: 18px; inset-inline-start: 18px;
   display: flex; flex-direction: column; gap: 10px; align-items: flex-start;
