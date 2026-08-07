@@ -361,6 +361,14 @@ a { color: inherit; text-decoration: none; }
   position: absolute; inset: 0;
   transform-origin: 50% 62%; transition: transform .06s linear;
 }
+/* Screen blend against the backdrop, for frames shot on black.
+   Screen leaves a black pixel showing whatever is behind it, so the black
+   surround disappears into the stage without any pixels being cut — which
+   also means no cut-out edge to give the join away. The blend sits on the
+   wrapper, not the layers: the wrapper's transform already makes a stacking
+   context, so blending inside it would composite against the wrapper rather
+   than against the backdrop behind it. */
+.hero-frames[data-blend="screen"] { mix-blend-mode: screen; }
 .hero-stage img.hero-layer {
   position: absolute; inset: 0;
   width: 100%; height: 100%; object-fit: contain; object-position: center;

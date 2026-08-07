@@ -88,8 +88,13 @@
   ];
 
   const BACKDROPS = [
-    { id: 'black-seamless', he: 'רקע שחור נקי (כמו הייחוס)',
-      v: 'pure black seamless studio backdrop, subject fully separated from the background' },
+    /* Also the best choice for frames headed to the live stage: the stage
+       screen-blends them, and screen leaves true black showing whatever is
+       behind it, so a black surround disappears with no cutting and no edge. */
+    { id: 'black-seamless', he: 'רקע שחור נקי (מומלץ לבמה החיה)',
+      v: 'pure black seamless studio backdrop, true black with no grey lift, no vignette and no ' +
+         'gradient falloff, no visible floor line or horizon, subject fully separated from the ' +
+         'background and lit so the rim of the silhouette stays clearly readable against it' },
     /* For frames destined for the live stage. The app cuts the backdrop away so
        one scene can stay put while only the player changes, and that cut is a
        flood fill from the edges — it is exact against a flat, even colour and

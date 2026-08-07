@@ -26,7 +26,8 @@
     chordInst: 'guitar',
     posterGroups: ['major', 'minor', 'seventh', 'sus'],
     posterChar: null,
-    stageBackdrop: 'dark',
+    stageBackdrop: 'none',      // pure black — matches frames shot on black
+    stageBlend: 'screen',
     transpose: 0,
     capo: 0,
     loop: null,
@@ -275,19 +276,29 @@
               // Say how many are in play, so a still hero is never a mystery.
               if (!(state.stageChar && state.stageChar.portrait)) return '';
               const n = Object.keys(posterImages).length;
-              const backdrops = [['dark', 'אולם חשוך'], ['stage', 'במה'],
-                                 ['warm', 'שעת זהב'], ['none', 'ללא']];
+              const backdrops = [['none', 'שחור'], ['dark', 'אולם חשוך'],
+                                 ['stage', 'במה'], ['warm', 'שעת זהב']];
+              const blends = [['screen', 'מיזוג — לרקע שחור'], ['normal', 'ללא מיזוג']];
               return `<div class="hint" style="margin-top:9px">${n
                 ? `<b>${n}</b> תמונות אקורד מהפוסטר — התמונה מתחלפת עם האקורד.`
                 : 'אין תמונות אקורד. הדמות תישאר על תמונה אחת — הרכב פוסטר כדי שהיא תתחלף לפי האקורד.'}
                 ${n ? '' : '<button class="btn btn-sm" style="margin-top:9px" data-route="poster">להרכבת פוסטר</button>'}
               </div>
+              <h3 style="margin-top:16px">שילוב בתמונה</h3>
+              <div class="chips">
+                ${blends.map(([v, he]) =>
+                  `<button class="chip ${(state.stageBlend || 'screen') === v ? 'active' : ''}" data-blend="${v}">${he}</button>`).join('')}
+              </div>
+              <div class="hint" style="margin-top:7px">
+                אם התמונות צולמו על <b>רקע שחור</b>, המיזוג מעלים אותו אל תוך רקע
+                הבמה בלי לחתוך כלום — ולכן גם בלי קצה חיתוך שמסגיר את החיבור.
+                כבה אותו אם התמונות כבר חתוכות או שהרקע שלהן בהיר.
+              </div>
               <h3 style="margin-top:16px">רקע הבמה</h3>
               <div class="chips">
                 ${backdrops.map(([v, he]) =>
-                  `<button class="chip ${(state.stageBackdrop || 'dark') === v ? 'active' : ''}" data-bd="${v}">${he}</button>`).join('')}
-              </div>
-              <div class="hint" style="margin-top:7px">נראה רק כשהתמונות חתוכות מהרקע.</div>`;
+                  `<button class="chip ${(state.stageBackdrop || 'none') === v ? 'active' : ''}" data-bd="${v}">${he}</button>`).join('')}
+              </div>`;
             })()}
             ${(() => {
               // A greyed-out button with a hover tooltip explains nothing — least
@@ -969,7 +980,7 @@ python scripts/build_sync_map.py work/analysis.json --chords work/chords.json --
       wrap.className = 'hero-stage';
       wrap.innerHTML =
         `<div class="hero-backdrop" data-bd="${esc(state.stageBackdrop || 'dark')}"></div>
-         <div class="hero-frames" id="hero-frames">
+         <div class="hero-frames" id="hero-frames" data-blend="${esc(state.stageBlend || 'screen')}">
            <img id="hero-img" class="hero-layer show" src="${state.stageChar.portrait}" alt="">
            <img id="hero-img-alt" class="hero-layer" alt="">
          </div>
@@ -2184,10 +2195,15 @@ python scripts/extract_chords.py work/audio.wav --beats work/analysis.json --out
       return render();
     }
 
-    // stage backdrop
+    // stage backdrop and blend
     const bd = e.target.closest('[data-bd]');
     if (bd && bd.classList.contains('chip')) {
       state.stageBackdrop = bd.dataset.bd;
+      return render();
+    }
+    const bl = e.target.closest('[data-blend]');
+    if (bl && bl.classList.contains('chip')) {
+      state.stageBlend = bl.dataset.blend;
       return render();
     }
 
