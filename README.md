@@ -1,9 +1,20 @@
 # 🎵 Maestro Studio
 
+> Analyze music in the browser and watch a character play it — with chord
+> shapes and fingerings that are physically correct, because they are
+> computed rather than guessed.
+>
+> No build step, no dependencies, no server. Open `index.html`.
+
 אפליקציית פרימיום לניהול מוזיקה, ניתוח מוזיקלי, יצירת דמויות — ו**דמות שמנגנת
 את השיר בסינכרון מלא, עם אקורדים ותווים מדויקים פיזית**.
 
-נבנתה על בסיס הסקיל [`music-motion-maestro`](../skills/music-motion-maestro).
+נבנתה על בסיס סקיל בשם `music-motion-maestro` — צנרת פייתון שמושכת אודיו
+מיוטיוב ומחלצת ממנו קצב, סולם, אקורדים ותווים. האפליקציה יודעת לקלוט את הפלט
+שלה, אבל **לא תלויה בה**: היא מנתחת אודיו בעצמה בדפדפן.
+
+> **מצב הפרויקט:** נבנה כפרויקט אישי. עובד מקצה לקצה ומכוסה ב-11 חבילות בדיקה
+> אוטומטיות (לוגיקה, אימות מוזיקלי, ובדיקות דפדפן מקצה-לקצה).
 
 ## הפעלה
 
@@ -11,10 +22,10 @@
 
 ```bash
 # פשוט לפתוח את הקובץ
-open maestro-studio/index.html
+open index.html
 
 # או להגיש מקומית (מומלץ — מבטיח שנגן היוטיוב נטען תקין)
-python3 -m http.server 8080 --directory maestro-studio
+python3 -m http.server 8080
 # ואז לגלוש ל־http://localhost:8080
 ```
 
@@ -126,7 +137,7 @@ Midjourney (סטילס) ו-Sora/Veo/Kling/Runway (הנפשה).
 ## מבנה
 
 ```
-maestro-studio/
+.
 ├── index.html
 ├── css/style.css          מערכת עיצוב (כהה, RTL, בסגנון Tidal)
 └── js/
