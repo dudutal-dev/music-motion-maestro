@@ -20,6 +20,10 @@
   let duration = 0;
   let currentId = null;
   let rafId = null;
+  /* Silent mode: a track with no video at all. The clock here was always
+     local — YouTube only re-anchored it — so a practice track can run on the
+     same clock with the polling skipped and nothing to re-anchor against. */
+  let silent = false;
 
   const emit = (k, ...a) => listeners[k].forEach(f => { try { f(...a); } catch (e) { console.error(e); } });
   const on = (k, f) => { if (listeners[k]) listeners[k].push(f); };
@@ -72,7 +76,7 @@
 
   /** Interpolated media time — smooth at 60fps, re-anchored on drift. */
   function now() {
-    if (!ready) return 0;
+    if (!ready && !silent) return 0;
     if (!playing) return anchorMedia;
     return anchorMedia + (performance.now() - anchorWall) / 1000;
   }
@@ -84,6 +88,12 @@
       rafId = requestAnimationFrame(tick);
       const wall = performance.now();
       // Re-anchor ~6x/sec; snap hard on a real jump (seek), ease on small drift.
+      if (silent) {
+        // Nothing to poll. Stop at the end rather than running past it.
+        if (playing && duration && now() >= duration) { playing = false; anchor(duration); emit('state', 0, { playing, duration }); }
+        emit('time', now(), duration, playing);
+        return;
+      }
       if (playing && wall - lastPoll > 160) {
         lastPoll = wall;
         const real = safeTime();
@@ -105,19 +115,35 @@
     get duration() { return duration || (yt && yt.getDuration ? yt.getDuration() : 0); },
     get videoId() { return currentId; },
     time: now,
+    /** A track with no video: the clock runs, nothing streams. */
+    loadSilent(dur) {
+      silent = true; currentId = null; playing = false;
+      duration = dur || 0; anchor(0);
+      if (!rafId) startLoop();
+      emit('state', -1, { playing, duration });
+    },
+    get silent() { return silent; },
     load(videoId, autoplay) {
       if (!ready || !videoId) return;
+      silent = false;
       currentId = videoId;
       duration = 0; anchor(0);
       if (autoplay === false) yt.cueVideoById(videoId);
       else yt.loadVideoById(videoId);
     },
-    play() { if (ready && yt.playVideo) yt.playVideo(); },
-    pause() { if (ready && yt.pauseVideo) yt.pauseVideo(); },
+    play() {
+      if (silent) { anchor(anchorMedia); playing = true; emit('state', 1, { playing, duration }); return; }
+      if (ready && yt.playVideo) yt.playVideo();
+    },
+    pause() {
+      if (silent) { anchorMedia = now(); playing = false; emit('state', 2, { playing, duration }); return; }
+      if (ready && yt.pauseVideo) yt.pauseVideo();
+    },
     toggle() { playing ? Player.pause() : Player.play(); },
     seek(t) {
-      if (!ready) return;
       t = Math.max(0, t);
+      if (silent) { anchor(t); return; }
+      if (!ready) return;
       yt.seekTo(t, true);
       anchor(t);
     },

@@ -65,6 +65,70 @@
     'Gsus4': { shape: [3, 3, 0, 0, 1, 3],     fingers: [2, 3, 0, 0, 1, 4] }
   };
 
+  /* ---------- practice set ----------
+     The library starts empty, and an empty app cannot show what it does. The
+     obvious fix would be to ship a few famous songs, but a song needs a
+     YouTube id and there is no way to check from here that a given id is the
+     right recording, or still exists — a dead or wrong link is worse than an
+     empty shelf.
+
+     What can be shipped honestly is the music itself. These are the standard
+     progressions, in common keys and tempos, with chords that are verified
+     against the theory rather than remembered. They carry no video, so the
+     stage runs them on its own clock with a click track: no link, no ads, no
+     network. They are practice material, and they say so. */
+  const PRACTICE = [
+    { title: 'I–V–vi–IV', artist: 'תרגול · הפרוגרסיה הנפוצה בפופ', genre: 'תרגול',
+      bpm: 96,  key: { tonic: 'C', mode: 'major' }, prog: ['C', 'G', 'Am', 'F'] },
+    { title: 'vi–IV–I–V', artist: 'תרגול · אותה פרוגרסיה, פתיחה במינור', genre: 'תרגול',
+      bpm: 100, key: { tonic: 'A', mode: 'minor' }, prog: ['Am', 'F', 'C', 'G'] },
+    { title: 'I–vi–IV–V', artist: 'תרגול · הבלדה של שנות ה-50', genre: 'תרגול',
+      bpm: 76,  key: { tonic: 'C', mode: 'major' }, prog: ['C', 'Am', 'F', 'G'] },
+    { title: 'ii–V–I', artist: 'תרגול · הקדנצה של הג׳אז', genre: 'תרגול',
+      bpm: 120, key: { tonic: 'C', mode: 'major' }, prog: ['Dm7', 'G7', 'Cmaj7', 'Cmaj7'] },
+    { title: 'בלוז 12 תיבות', artist: 'תרגול · בלוז ב-A', genre: 'תרגול',
+      bpm: 88,  key: { tonic: 'A', mode: 'major' },
+      prog: ['A7', 'A7', 'A7', 'A7', 'D7', 'D7', 'A7', 'A7', 'E7', 'D7', 'A7', 'E7'] },
+    { title: 'I–IV–V בגיטרה פתוחה', artist: 'תרגול · שלושת האקורדים הראשונים', genre: 'תרגול',
+      bpm: 92,  key: { tonic: 'G', mode: 'major' }, prog: ['G', 'C', 'D', 'G'] },
+    { title: 'Em–C–G–D', artist: 'תרגול · פופ-רוק במינור', genre: 'תרגול',
+      bpm: 110, key: { tonic: 'E', mode: 'minor' }, prog: ['Em', 'C', 'G', 'D'] },
+    { title: 'אנדלוסי (i–VII–VI–V)', artist: 'תרגול · צליל ים-תיכוני', genre: 'תרגול',
+      bpm: 104, key: { tonic: 'A', mode: 'minor' }, prog: ['Am', 'G', 'F', 'E'] }
+  ];
+
+  /** Builds the practice tracks, each with a real analysis and no video. */
+  function practiceTracks(barsPerChord, repeats) {
+    const bars = barsPerChord || 2, reps = repeats || 4;
+    return PRACTICE.map(p => {
+      const beat = 60 / p.bpm, barLen = beat * 4;
+      const chords = [], beatTimes = [], downbeats = [];
+      const total = p.prog.length * reps;
+      for (let i = 0; i < total; i++) {
+        const start = i * barLen * bars;
+        chords.push({ start: +start.toFixed(3), end: +(start + barLen * bars).toFixed(3),
+                      chord: p.prog[i % p.prog.length] });
+      }
+      const duration = total * barLen * bars;
+      for (let t = 0, i = 0; t < duration; t += beat, i++) {
+        beatTimes.push(+t.toFixed(3));
+        if (i % 4 === 0) downbeats.push(+t.toFixed(3));
+      }
+      return {
+        videoId: null, url: '', title: p.title, artist: p.artist,
+        genre: p.genre, album: 'ספריית תרגול', practice: true,
+        analysis: {
+          bpm: p.bpm, key: p.key, duration: +duration.toFixed(2), firstBeat: 0,
+          timeSignature: 4, beatTimes, downbeats,
+          sections: [{ start: 0, end: +duration.toFixed(2), label: 'mid', energy: .5 }],
+          chords, energy: .5, valence: p.key.mode === 'major' ? .7 : .4,
+          mood: 'practice', source: 'practice',
+          confidence: { tempo: 1, key: 1 }      // written down, not estimated
+        }
+      };
+    });
+  }
+
   /** Grouped for the chord library / poster, in teaching order. */
   const CHORD_GROUPS = [
     { id: 'major',   he: 'אקורדים מז׳וריים', en: 'MAJOR CHORDS', chords: ['A', 'B', 'C', 'D', 'E', 'F', 'G'] },
@@ -457,7 +521,7 @@
     const s = defaults();
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return s;
     if (Array.isArray(parsed.tracks)) {
-      s.tracks = parsed.tracks.filter(t => t && typeof t === 'object' && t.videoId)
+      s.tracks = parsed.tracks.filter(t => t && typeof t === 'object' && (t.videoId || t.practice))
         .map(t => (t.id ? t : Object.assign({ id: uid() }, t)));
     }
     if (Array.isArray(parsed.characters)) {
@@ -601,6 +665,6 @@
     parseChord, guitarFingering, pianoVoicing, romanNumeral,
     guitarFingeringSentence, pianoVoicingSentence, fingeringSentence,
     visualFingering, neckLandmark, requiredLandmark, transposeChord, capoShapes,
-    parseVideoId, thumbUrl, keyOf, keyLabel, fetchMeta, cleanTitle, splitTitle, Store, Posters
+    parseVideoId, thumbUrl, keyOf, keyLabel, PRACTICE, practiceTracks, fetchMeta, cleanTitle, splitTitle, Store, Posters
   };
 })(window);

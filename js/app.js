@@ -216,7 +216,15 @@
       <div class="section-head"><div class="section-title">${list.length} שירים</div>
         <button class="section-more" data-action="add-track">+ הוסף</button></div>
       ${list.length ? `<div class="rows">${list.map((t, i) => trackRow(t, i)).join('')}</div>`
-        : `<div class="empty"><p>אין תוצאות לסינון הזה.</p></div>`}
+        : Store.state.tracks.length
+          ? `<div class="empty"><p>אין תוצאות לסינון הזה.</p></div>`
+          : `<div class="empty"><div class="empty-icon">🎧</div><h3>הספרייה ריקה</h3>
+             <p>הוסף שיר מיוטיוב — או טען את ספריית התרגול ותראה את הבמה עובדת מיד,
+                בלי קישור ובלי רשת.</p>
+             <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap">
+               <button class="btn btn-primary" data-action="add-track">+ הוסף שיר</button>
+               <button class="btn" data-action="load-practice">טען ספריית תרגול</button>
+             </div></div>`}
     </div>`;
   }
 
@@ -363,7 +371,11 @@
         <div class="guide-state">${tracks.length
           ? `יש ${tracks.length} שירים בספרייה.`
           : 'עדיין אין שירים.'}</div>`,
-        `<button class="btn btn-sm" data-action="add-track">+ הוסף שיר</button>`)}
+        `<button class="btn btn-sm" data-action="add-track">+ הוסף שיר</button>
+         <button class="btn btn-sm" data-action="load-practice">טען ספריית תרגול</button>
+         <div class="hint" style="margin-top:8px">ספריית התרגול היא 8 פרוגרסיות סטנדרטיות עם
+           אקורדים מאומתים — בלי קישור, בלי פרסומות ובלי רשת. הבמה מריצה אותן על שעון פנימי
+           עם מטרונום, כדי שיהיה מה לראות עוד לפני שהוספת שיר.</div>`)}
 
       ${step(2, 'נתח את השיר', analysed.length > 0, `
         <p><b>זה השער.</b> בלי BPM ואקורדים הבמה תישאר ריקה — אין למה לסנכרן.</p>
@@ -1427,6 +1439,20 @@ python scripts/build_sync_map.py work/analysis.json --chords work/chords.json --
       </div>`;
   }
 
+  /* A metronome for practice tracks. The performer needs a pulse to ride and
+     the player needs something audible; the lessons module already owns a
+     Web Audio click, so this borrows it rather than growing a second one. */
+  function startClick(t) {
+    if (!t || !t.analysis || !t.analysis.bpm || !LS || !LS.Audio) return;
+    try {
+      LS.Audio.ensure();
+      LS.Audio.startMetronome(t.analysis.bpm, t.analysis.timeSignature || 4);
+    } catch (e) { /* no audio context: the stage still runs, just silently */ }
+  }
+  function stopClick() {
+    try { if (LS && LS.Audio) LS.Audio.stopMetronome(); } catch (e) {}
+  }
+
   function playTrack(id) {
     const t = Store.getTrack(id);
     if (!t) return;
@@ -1435,10 +1461,16 @@ python scripts/build_sync_map.py work/analysis.json --chords work/chords.json --
     state.lastBar = -1;
     state.loop = null;
     lastReadoutChord = null;
-    if (stageChar()) {
-      // keep instrument choice
+    stopClick();
+    if (t.videoId) {
+      P.load(t.videoId, true);
+    } else {
+      // A practice track has nothing to stream. The clock runs on its own and
+      // a click marks the beat, so the stage still has something to follow.
+      P.loadSilent((t.analysis && t.analysis.duration) || 0);
+      P.play();
+      startClick(t);
     }
-    P.load(t.videoId, true);
     updatePlayerBar();
     if (state.route === 'stage') render();
     else renderSidebar();
@@ -2159,6 +2191,14 @@ python scripts/extract_chords.py work/audio.wav --beats work/analysis.json --out
     if (a === 'new-character') return characterModal(null);
     if (a === 'edit-char') return characterModal(act.dataset.id);
     if (a === 'save-char') return saveCharacter(act.dataset.id);
+    if (a === 'load-practice') {
+      const existing = new Set(Store.state.tracks.filter(t => t.practice).map(t => t.title));
+      const add = MM.practiceTracks().filter(t => !existing.has(t.title));
+      add.forEach(t => Store.addTrack(t));
+      toast(add.length ? `${add.length} תרגילים נוספו לספרייה` : 'ספריית התרגול כבר טעונה');
+      state.route = 'library';
+      return render();
+    }
     if (a === 'del-track') {
       const t = Store.getTrack(act.dataset.id);
       if (!t) return;
@@ -2351,7 +2391,12 @@ python scripts/extract_chords.py work/audio.wav --beats work/analysis.json --out
       return;
     }
     if (a === 'play-track') { e.stopPropagation(); return playTrack(act.dataset.id); }
-    if (a === 'toggle') return P.toggle();
+    if (a === 'toggle') {
+      // The click is a separate sound source, so it has to follow the transport.
+      const cur = state.currentTrackId ? Store.getTrack(state.currentTrackId) : null;
+      if (cur && !cur.videoId) { if (P.playing) stopClick(); else startClick(cur); }
+      return P.toggle();
+    }
     if (a === 'next') return neighbourTrack(1);
     if (a === 'prev') return neighbourTrack(-1);
     if (a === 'back10') return P.nudge(-10);
