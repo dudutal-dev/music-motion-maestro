@@ -4,7 +4,10 @@
 > shapes and fingerings that are physically correct, because they are
 > computed rather than guessed.
 >
-> No build step, no dependencies, no server. Open `index.html`.
+> No build step, no dependencies, no server.
+>
+> **▶ [Open the app](https://dudutal-dev.github.io/music-motion-maestro/)** — runs
+> entirely in your browser; nothing is uploaded anywhere.
 
 אפליקציית פרימיום לניהול מוזיקה, ניתוח מוזיקלי, יצירת דמויות — ו**דמות שמנגנת
 את השיר בסינכרון מלא, עם אקורדים ותווים מדויקים פיזית**.
@@ -18,7 +21,17 @@
 
 ## הפעלה
 
-אין שלב בנייה ואין תלויות. פותחים את `index.html` בדפדפן:
+### 🌐 בלחיצה, בלי להוריד כלום
+
+**[dudutal-dev.github.io/music-motion-maestro](https://dudutal-dev.github.io/music-motion-maestro/)**
+
+זו הדרך המומלצת. הדף מוגש ב-https, ולכן נגן היוטיוב, ניתוח האודיו (Web Audio)
+וההקראה (Speech API) עובדים במלואם — חלקם מוגבלים כשפותחים קובץ מקומי.
+הכל עדיין רץ בדפדפן שלך; שום קובץ לא נשלח לשרת.
+
+### 💻 מקומית
+
+אין שלב בנייה ואין תלויות:
 
 ```bash
 # פשוט לפתוח את הקובץ
