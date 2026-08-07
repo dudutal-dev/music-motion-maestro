@@ -354,6 +354,71 @@
   }
   const thumbUrl = id => `https://i.ytimg.com/vi/${id}/hqdefault.jpg`;
 
+  /* ---------- reading a track's details off the link ----------
+     Asking someone to retype the title and artist that are already
+     sitting in the URL is busywork. YouTube's oEmbed endpoint hands
+     both over without a key, so we ask it and fill the form in.
+
+     It is a network call to a third party, so it may be blocked or
+     offline. Every caller must handle a null and let the user type —
+     auto-fill is a convenience, never a prerequisite. */
+
+  /** Strips the production noise YouTube titles collect. */
+  function cleanTitle(raw) {
+    let s = String(raw || '');
+    // "(Official Video)", "[Lyric Video]", "(4K Remaster)" and friends
+    const noise = /[\(\[]\s*(?:[^\)\]]*\b(?:official|lyrics?|audio|video|visuali[sz]er|remaster(?:ed)?|hd|hq|4k|8k|mv|m\/v|full|clip|prod|explicit)\b[^\)\]]*)\s*[\)\]]/gi;
+    let prev;
+    do { prev = s; s = s.replace(noise, ' '); } while (s !== prev);
+    s = s.replace(/\s*[|｜]\s*[^|｜]*$/, '');        // trailing "| Official Channel"
+    // The same noise also shows up bare on the tail: "… 4K Remastered", "… HD".
+    s = s.replace(
+      /(?:\s*[-–—]?\s*\b(?:official(?:\s+(?:music\s+)?video|\s+audio)?|lyrics?(?:\s+video)?|audio|visuali[sz]er|remaster(?:ed)?|hd|hq|4k|8k)\b)+\s*$/gi,
+      '');
+    s = s.replace(/\s*[-–—]\s*$/, '');
+    return s.replace(/\s{2,}/g, ' ').trim();
+  }
+
+  /** "Artist - Song" is the dominant convention; fall back to the channel. */
+  function splitTitle(cleaned, channel) {
+    // Channel names carry branding the artist name does not: "Queen Official",
+    // "AdeleVEVO", the auto-generated "… - Topic".
+    const chan = String(channel || '')
+      .replace(/\s*-\s*Topic$/i, '')
+      .replace(/\s*VEVO$/i, '')
+      .replace(/\s+Official(?:\s+(?:Channel|Music))?$/i, '')
+      .trim();
+    const m = cleaned.match(/^(.+?)\s+[-–—]\s+(.+)$/);
+    if (m) {
+      const left = m[1].trim(), right = m[2].trim();
+      // "Artist - Song" is the usual order, but plenty of uploads invert it.
+      // The channel name breaks the tie: whichever side it matches is the artist.
+      const norm = x => x.toLowerCase().replace(/\s+/g, '');
+      if (chan && norm(right) === norm(chan)) return { artist: right, title: left };
+      // Guard against a hyphen inside the song name itself.
+      if (left && right && left.length < 60) return { artist: left, title: right };
+    }
+    return { artist: chan, title: cleaned };
+  }
+
+  /**
+   * Resolves a video's title and artist. Never rejects — resolves to null
+   * when the lookup is unavailable, so the form stays usable offline.
+   */
+  function fetchMeta(videoId) {
+    const url = 'https://www.youtube.com/oembed?format=json&url=' +
+                encodeURIComponent('https://www.youtube.com/watch?v=' + videoId);
+    return fetch(url, { mode: 'cors' })
+      .then(r => (r.ok ? r.json() : null))
+      .then(j => {
+        if (!j || !j.title) return null;
+        const cleaned = cleanTitle(j.title);
+        const parts = splitTitle(cleaned, j.author_name);
+        return { title: parts.title || cleaned, artist: parts.artist || '', raw: j.title };
+      })
+      .catch(() => null);
+  }
+
   /* ---------- persistence ---------- */
   const KEY = 'maestro.studio.v1';
   const defaults = () => ({ tracks: [], characters: [], settings: { volume: 80, lang: 'he', voiceRate: .95 } });
@@ -409,6 +474,6 @@
     parseChord, guitarFingering, pianoVoicing, romanNumeral,
     guitarFingeringSentence, pianoVoicingSentence, fingeringSentence,
     visualFingering, neckLandmark, requiredLandmark, transposeChord, capoShapes,
-    parseVideoId, thumbUrl, Store
+    parseVideoId, thumbUrl, fetchMeta, cleanTitle, splitTitle, Store
   };
 })(window);

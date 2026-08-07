@@ -1058,8 +1058,14 @@ python scripts/build_sync_map.py work/analysis.json --chords work/chords.json --
       <div class="form-grid">
         <div class="field" style="grid-column:1/-1">
           <label>קישור יוטיוב</label>
-          <input id="f-url" placeholder="https://www.youtube.com/watch?v=..." autofocus>
-          <div class="hint">הקישור נשמר קבוע במערכת ומשמש לניגון ולניתוח.</div>
+          <div style="display:flex;gap:12px;align-items:flex-start">
+            <img id="f-thumb" alt="" style="width:104px;aspect-ratio:16/9;object-fit:cover;
+                 border-radius:8px;border:1px solid var(--line);background:var(--panel-2);display:none">
+            <div style="flex:1;min-width:0">
+              <input id="f-url" placeholder="https://www.youtube.com/watch?v=..." autofocus>
+              <div class="hint" id="f-url-hint">הדבק את הקישור — השם, האמן והעטיפה יתמלאו לבד.</div>
+            </div>
+          </div>
         </div>
         <div class="field"><label>שם השיר</label><input id="f-title" placeholder="שם השיר"></div>
         <div class="field"><label>אמן</label><input id="f-artist" placeholder="שם האמן"></div>
@@ -1070,6 +1076,48 @@ python scripts/build_sync_map.py work/analysis.json --chords work/chords.json --
       </div>`,
       `<button class="btn btn-primary" data-action="save-track">שמור והוסף</button>
        <button class="btn btn-ghost" data-action="close-modal">ביטול</button>`);
+    wireTrackAutofill();
+  }
+
+  /* Fills the form from the link. The cover comes straight off the video id,
+     so it always appears; the title and artist need a lookup that can fail,
+     and when it does we say so and leave the fields to the user rather than
+     blocking the add. Anything already typed is never overwritten. */
+  function wireTrackAutofill() {
+    const url = $('#f-url'), thumb = $('#f-thumb'), hint = $('#f-url-hint');
+    if (!url) return;
+    let lastId = null;
+
+    const apply = () => {
+      const id = MM.parseVideoId(url.value.trim());
+      if (!id) {
+        thumb.style.display = 'none';
+        lastId = null;
+        return;
+      }
+      if (id === lastId) return;
+      lastId = id;
+
+      thumb.src = MM.thumbUrl(id);
+      thumb.style.display = '';
+      hint.textContent = 'מושך את פרטי השיר…';
+
+      MM.fetchMeta(id).then(meta => {
+        if (lastId !== id) return;                 // link changed while we waited
+        if (!meta) {
+          hint.textContent = 'לא הצלחתי למשוך את הפרטים אוטומטית — מלא שם ואמן ידנית.';
+          return;
+        }
+        const title = $('#f-title'), artist = $('#f-artist');
+        if (title && !title.value.trim()) title.value = meta.title;
+        if (artist && !artist.value.trim()) artist.value = meta.artist;
+        hint.textContent = 'הפרטים מולאו מהקישור. אפשר לתקן.';
+      });
+    };
+
+    url.addEventListener('input', apply);
+    url.addEventListener('paste', () => setTimeout(apply, 0));
+    if (url.value.trim()) apply();
   }
 
   function saveTrack() {
@@ -1091,6 +1139,79 @@ python scripts/build_sync_map.py work/analysis.json --chords work/chords.json --
   }
 
   let autoAnalysis = null;
+  let captureControl = {};
+
+  /* Records this tab's own audio while the song plays, then runs the same
+     analyser the file path uses. The player is driven from the top so the
+     recording starts where the song does — that keeps the detected beat grid
+     aligned to real song time instead of to wherever playback happened to be. */
+  async function startTabCapture(trackId) {
+    const status = $('#cap-status'), out = $('#cap-result');
+    const startBtn = $('[data-action="capture-tab"]'), stopBtn = $('[data-action="capture-stop"]');
+    if (!status) return;
+    out.innerHTML = '';
+
+    if (!AA.canCaptureTab()) {
+      out.innerHTML = `<div class="hand-readout" style="color:var(--bad)">
+        הדפדפן הזה לא תומך בהקלטת אודיו מכרטיסייה — זה קיים היום ב-Chrome וב-Edge במחשב.
+        בנייד או ב-Safari השתמש ב"ניתוח מונחה" או בקובץ אודיו.</div>`;
+      return;
+    }
+
+    const t = Store.getTrack(trackId);
+    const pick = parseFloat($('#cap-secs').value);
+    // "whole song" needs a length; the player knows it once the video is cued.
+    const secs = pick > 0 ? pick : Math.ceil(P.duration || 0) || 90;
+
+    captureControl = {};
+    let offset = 0;
+    startBtn.disabled = true;
+    stopBtn.style.display = '';
+
+    const restore = () => {
+      startBtn.disabled = false;
+      stopBtn.style.display = 'none';
+      captureControl = {};
+    };
+
+    try {
+      // Start the song first. Picking a tab takes a few seconds, and if we
+      // waited until after it the recording would open on silence. Playing now
+      // means sound is already flowing when the track goes live — and the
+      // player's clock then tells us exactly where in the song we started.
+      if (t && P.ready) {
+        if (P.videoId !== t.videoId) P.load(t.videoId, true);
+        else { P.seek(0); P.play(); }
+      }
+
+      status.textContent = 'ממתין לאישור שיתוף… (השיר כבר מתנגן)';
+      const buf = await AA.captureTabAudio({
+        seconds: secs,
+        control: captureControl,
+        onStart: () => { offset = Math.max(0, P.time() || 0); },
+        onTick: (elapsed, limit) => {
+          status.textContent = `מקליט… ${Math.floor(elapsed)} / ${Math.round(limit)} שניות`;
+        }
+      });
+
+      P.pause();
+      status.textContent = 'מנתח…';
+      const a = AA.shiftAnalysis(
+        await AA.analyzeFile(buf, m => { status.textContent = m; }), offset);
+      // The recording may be shorter than the song; the chart should still span
+      // the whole track, so keep the player's length as the authority.
+      if (P.duration && P.duration > a.duration) a.duration = +P.duration.toFixed(2);
+      autoAnalysis = a;
+      status.textContent = '';
+      out.innerHTML = renderAutoResult(a, 'הקלטה מהכרטיסייה');
+    } catch (err) {
+      P.pause();
+      status.textContent = '';
+      out.innerHTML = `<div class="hand-readout" style="color:var(--bad)">${esc(err.message || 'ההקלטה נכשלה')}</div>`;
+    } finally {
+      restore();
+    }
+  }
 
   /** Show what the analyzer found, and be honest about how sure it is. */
   function renderAutoResult(a, filename) {
@@ -1123,11 +1244,39 @@ python scripts/build_sync_map.py work/analysis.json --chords work/chords.json --
     const dur = a.duration || Math.round(P.duration) || 0;
     modal(`ניתוח — ${esc(t.title)}`, `
       <div class="tabs">
-        <button class="tab active" data-tab="auto">🎧 נתח קובץ אודיו</button>
+        <button class="tab active" data-tab="tab">🔴 הקלט מהשיר</button>
+        <button class="tab" data-tab="auto">🎧 נתח קובץ אודיו</button>
         <button class="tab" data-tab="assist">ניתוח מונחה</button>
         <button class="tab" data-tab="json">ייבוא מהסקיל</button>
       </div>
-      <div id="tab-auto">
+      <div id="tab-tab">
+        <div class="panel-desc" style="margin-bottom:16px">
+          אין צורך בקובץ אודיו. השיר כבר מתנגן כאן — האפליקציה תקליט את הקול
+          של הכרטיסייה הזאת בזמן שהוא מתנגן, ותוציא ממנו
+          <b>BPM, סולם, אקורדים ומבנה</b>. ההקלטה לא נשמרת ולא נשלחת לשום מקום.
+        </div>
+        <div class="panel-desc" style="margin-bottom:16px">
+          כשייפתח חלון השיתוף: בחר <b>"כרטיסייה"</b> → את <b>הכרטיסייה הזאת</b> →
+          וחשוב מכל, סמן למטה <b>"שתף גם את האודיו של הכרטיסייה"</b>.
+          בלי הסימון הזה לא ייקלט קול.
+        </div>
+        <div class="field" style="max-width:280px">
+          <label>כמה להקליט</label>
+          <select id="cap-secs">
+            <option value="60">דקה — מהיר, מספיק לרוב השירים</option>
+            <option value="120">שתי דקות</option>
+            <option value="0">כל השיר — הכי מדויק</option>
+          </select>
+          <div class="hint">הפרוגרסיה חוזרת על עצמה, ולכן דקה בדרך כלל מספיקה.</div>
+        </div>
+        <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:14px">
+          <button class="btn btn-primary" data-action="capture-tab">התחל הקלטה וניתוח</button>
+          <button class="btn btn-ghost" data-action="capture-stop" style="display:none">עצור וסיים</button>
+          <span id="cap-status" style="font-size:13px;color:var(--text-3)"></span>
+        </div>
+        <div id="cap-result" style="margin-top:16px"></div>
+      </div>
+      <div id="tab-auto" style="display:none">
         <div class="panel-desc" style="margin-bottom:16px">
           העלה קובץ אודיו של השיר (mp3 / wav / m4a) והאפליקציה תוציא לבד
           <b>BPM, רשת ביטים, סולם, אקורדים ומבנה</b> — בלי פייתון ובלי הזנה ידנית.
@@ -1188,8 +1337,13 @@ python scripts/extract_chords.py work/audio.wav --beats work/analysis.json --out
       const tab = e.target.closest('[data-tab]');
       if (tab) {
         back.querySelectorAll('.tab').forEach(x => x.classList.toggle('active', x === tab));
-        for (const t of ['auto', 'assist', 'json'])
+        for (const t of ['tab', 'auto', 'assist', 'json'])
           $('#tab-' + t).style.display = tab.dataset.tab === t ? '' : 'none';
+      }
+      if (e.target.closest('[data-action="capture-tab"]')) { startTabCapture(id); return; }
+      if (e.target.closest('[data-action="capture-stop"]')) {
+        if (captureControl.stop) captureControl.stop();
+        return;
       }
       if (e.target.closest('[data-action="pick-audio"]')) {
         const inp = document.createElement('input');
@@ -1225,11 +1379,16 @@ python scripts/extract_chords.py work/audio.wav --beats work/analysis.json --out
     if (!t) return;
     const jsonText = ($('#a-json') && $('#a-json').value || '').trim();
     const jsonVisible = $('#tab-json').style.display !== 'none';
-    const autoVisible = $('#tab-auto') && $('#tab-auto').style.display !== 'none';
+    // Both the recorder and the file picker land in autoAnalysis.
+    const shown = sel => $(sel) && $(sel).style.display !== 'none';
+    const capVisible = shown('#tab-tab'), autoVisible = shown('#tab-auto');
     let analysis;
     try {
-      if (autoVisible) {
-        if (!autoAnalysis) return toast('נתח קודם קובץ אודיו, או עבור ללשונית אחרת', true);
+      if (capVisible || autoVisible) {
+        if (!autoAnalysis) {
+          return toast(capVisible ? 'הקלט ונתח קודם, או עבור ללשונית אחרת'
+                                  : 'נתח קודם קובץ אודיו, או עבור ללשונית אחרת', true);
+        }
         analysis = autoAnalysis;
       } else if (jsonVisible && jsonText) {
         analysis = A.fromSkillJson(JSON.parse(jsonText), P.duration);

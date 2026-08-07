@@ -363,5 +363,131 @@
     };
   }
 
-  global.AudioAnalysis = { analyzeFile, fft, estimateTempo, estimateKey, decodeToMono };
+  /* ============================================================
+     Capturing the sound instead of asking for a file
+
+     The analyser above needs audio, and until now the only way to
+     give it any was an mp3 the user had to find somewhere. That is
+     the wrong ask: the song is already playing, in this very tab,
+     through the YouTube player.
+
+     The browser cannot read that audio out of the player — the
+     iframe is cross-origin and deliberately opaque. But it can
+     record the tab's own output, with the user's explicit consent,
+     through the same screen-share machinery used for video calls.
+     So we ask for the tab, keep only the audio track, and record it
+     while the song plays. Nothing is downloaded and nothing leaves
+     the machine.
+
+     This needs tab-audio capture, which today means desktop Chrome
+     or Edge. Callers should check `canCaptureTab()` first and say so
+     plainly rather than failing at the picker.
+     ============================================================ */
+
+  /**
+   * Rebases an analysis onto song time.
+   *
+   * A recording that starts once the song is already playing describes the
+   * window [offset, offset+length], but every timestamp in it counts from
+   * zero. Left alone that makes the performer play the whole song late by
+   * `offset`. Shifting the grid here is exact, so the manual nudge stays for
+   * genuine taste rather than for arithmetic we can do ourselves.
+   */
+  function shiftAnalysis(a, offset) {
+    if (!offset) return a;
+    const r = t => +(t + offset).toFixed(3);
+    a.firstBeat = r(a.firstBeat);
+    a.beatTimes = a.beatTimes.map(r);
+    a.downbeats = a.downbeats.map(r);
+    a.chords = a.chords.map(c => ({ ...c, start: r(c.start), end: r(c.end) }));
+    a.sections = a.sections.map(s => ({ ...s, start: r(s.start), end: r(s.end) }));
+    a.analyzedFrom = +offset.toFixed(2);
+    return a;
+  }
+
+  function canCaptureTab() {
+    return !!(navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia &&
+              typeof MediaRecorder !== 'undefined');
+  }
+
+  /**
+   * Records tab audio and returns it as an ArrayBuffer that analyzeFile
+   * can decode. Resolves early if the user stops sharing.
+   *
+   * @param {object}   o
+   * @param {number}   o.seconds     how long to record
+   * @param {function} o.onStart     called once the audio track is live
+   * @param {function} o.onTick      called each second with elapsed seconds
+   * @param {object}   o.control     receives a .stop() to finish early
+   */
+  async function captureTabAudio(o) {
+    o = o || {};
+    if (!canCaptureTab()) {
+      throw new Error('הדפדפן הזה לא תומך בהקלטת אודיו מטאב. נסה Chrome או Edge במחשב.');
+    }
+
+    let stream;
+    try {
+      stream = await navigator.mediaDevices.getDisplayMedia({
+        video: true,               // required — the picker refuses audio-only
+        audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
+      });
+    } catch (e) {
+      throw new Error(e && e.name === 'NotAllowedError'
+        ? 'ביטלת את השיתוף. כדי לנתח צריך לאשר את שיתוף הטאב.'
+        : 'לא הצלחתי לפתוח את בורר הטאבים.');
+    }
+
+    const audio = stream.getAudioTracks()[0];
+    // The picker lets you share a tab without its sound, which is the single
+    // most common way this goes wrong. Catch it now, while we can still explain.
+    if (!audio) {
+      stream.getTracks().forEach(t => t.stop());
+      throw new Error('שיתפת את הטאב בלי הקול. חזור ונסה שוב — צריך לסמן ' +
+                      '"שתף גם את האודיו של הכרטיסייה" בתחתית החלון.');
+    }
+    stream.getVideoTracks().forEach(t => t.stop());   // we only ever wanted the sound
+
+    const rec = new MediaRecorder(new MediaStream([audio]));
+    const chunks = [];
+    rec.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
+
+    const done = new Promise(resolve => { rec.onstop = resolve; });
+    let ticker = null, finished = false;
+    const finish = () => {
+      if (finished) return;
+      finished = true;
+      if (ticker) clearInterval(ticker);
+      if (rec.state !== 'inactive') rec.stop();
+      audio.stop();
+    };
+
+    if (o.control) o.control.stop = finish;
+    audio.addEventListener('ended', finish);   // user hit "Stop sharing"
+
+    rec.start();
+    if (o.onStart) o.onStart();
+
+    const startedAt = Date.now();
+    const limit = Math.max(5, o.seconds || 60);
+    ticker = setInterval(() => {
+      const elapsed = (Date.now() - startedAt) / 1000;
+      if (o.onTick) o.onTick(elapsed, limit);
+      if (elapsed >= limit) finish();
+    }, 250);
+
+    await done;
+    if (ticker) clearInterval(ticker);
+
+    const blob = new Blob(chunks, { type: rec.mimeType || 'audio/webm' });
+    if (blob.size < 2048) {
+      throw new Error('לא נקלט קול. ודא שהשיר באמת מתנגן ושסימנת לשתף את האודיו של הכרטיסייה.');
+    }
+    return blob.arrayBuffer();
+  }
+
+  global.AudioAnalysis = {
+    analyzeFile, fft, estimateTempo, estimateKey, decodeToMono,
+    canCaptureTab, captureTabAudio, shiftAnalysis
+  };
 })(window);
