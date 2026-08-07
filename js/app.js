@@ -28,6 +28,11 @@
     posterChar: null,
     stageBackdrop: 'none',      // pure black — matches frames shot on black
     stageBlend: 'screen',
+    // null = decide on first use. On a wide screen the settings live in their
+    // own column and cost the stage nothing, so they stay open; on a phone they
+    // stack above it and push the performance off the screen, so they fold.
+    stageSettings: null,
+    stageFocus: false,
     transpose: 0,
     capo: 0,
     loop: null,
@@ -238,12 +243,41 @@
     P.load(first.videoId, false);   // cue, don't autoplay
   }
 
+  /**
+   * Focus mode: the stage and the chord, nothing else.
+   *
+   * The settings column had grown past a screenful, so on a phone the stage
+   * itself was scrolled away by the controls that configure it. Here everything
+   * but the performance is taken out of the layout — same behaviour on desktop
+   * and mobile, since the complaint applies to both.
+   *
+   * Real fullscreen is requested when the browser allows it, but the layout
+   * does not depend on that: it is a class on the shell, so it still works if
+   * the request is refused, which iOS Safari does on non-video elements.
+   */
+  function setStageFocus(on) {
+    state.stageFocus = on;
+    document.body.classList.toggle('stage-focus', on);
+    try {
+      if (on && document.documentElement.requestFullscreen && !document.fullscreenElement) {
+        document.documentElement.requestFullscreen().catch(() => {});
+      } else if (!on && document.fullscreenElement && document.exitFullscreen) {
+        document.exitFullscreen().catch(() => {});
+      }
+    } catch (e) { /* layout mode stands on its own */ }
+    render();
+  }
+
   function viewStage() {
+    if (state.stageSettings === null) state.stageSettings = window.innerWidth >= 1080;
     const t = state.currentTrackId ? Store.getTrack(state.currentTrackId) : null;
     const chars = Store.state.characters;
     const analyzed = t && t.analysis && t.analysis.bpm;
     return `<div class="page">
-      ${pageHead('הבמה החיה', 'דמות שמנגנת את השיר — האקורדים, הידיים והתנועה נעולים למוזיקה')}
+      <div class="stage-head">
+        ${pageHead('הבמה החיה', 'דמות שמנגנת את השיר — האקורדים, הידיים והתנועה נעולים למוזיקה')}
+        <button class="btn btn-sm" data-action="stage-focus" ${analyzed ? '' : 'disabled'}>⛶ מסך מלא</button>
+      </div>
       <div class="stage-wrap">
         <div>
           <div class="stage" id="stage">
@@ -255,6 +289,7 @@
               ${t ? `<button class="btn btn-primary" data-action="analyze" data-id="${t.id}">נתח עכשיו</button>`
                 : `<button class="btn btn-primary" data-route="library">לספרייה</button>`}
             </div>`}
+            ${analyzed ? `<button class="stage-exit" data-action="stage-unfocus" aria-label="צא ממסך מלא">✕</button>` : ''}
             ${analyzed ? `<div class="stage-hud">
               <span class="hud-pill">BPM <b id="hud-bpm">${Math.round(t.analysis.bpm)}</b></span>
               <span class="hud-pill">אקורד <b id="hud-chord">—</b></span>
@@ -264,7 +299,12 @@
           </div>
         </div>
         <div>
-          <div class="side-panel" style="margin-bottom:16px">
+          <div class="side-panel ${state.stageSettings ? '' : 'collapsed'}" style="margin-bottom:16px">
+            <button class="panel-toggle" data-action="stage-settings">
+              <span>הגדרות הבמה</span>
+              <span class="panel-caret">${state.stageSettings ? '▾' : '▸'}</span>
+            </button>
+            <div class="panel-body">
             <h3>תצוגה</h3>
             <div class="chips">
               <button class="chip ${state.stageMode !== 'hero' ? 'active' : ''}" data-mode="anim">🎬 אנימציה</button>
@@ -325,6 +365,7 @@
                 <option value="">— דמות ברירת מחדל —</option>
                 ${chars.map(c => `<option value="${c.id}" ${state.stageChar && state.stageChar.id === c.id ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}
               </select></div>` : ''}
+            </div><!-- /panel-body -->
           </div>
           <div class="side-panel">
             <h3>מיקום הידיים כרגע</h3>
@@ -968,7 +1009,9 @@ python scripts/build_sync_map.py work/analysis.json --chords work/chords.json --
     const host = $('#stage');
     const t = state.currentTrackId ? Store.getTrack(state.currentTrackId) : null;
     if (!host || !t || !t.analysis || !t.analysis.bpm) { state.performer = null; return; }
+    // These are markup, not performer output, so carry them across the rebuild.
     const hud = host.querySelector('.stage-hud');
+    const exit = host.querySelector('.stage-exit');
     host.innerHTML = '';
 
     const heroMode = state.stageMode === 'hero' && state.stageChar && state.stageChar.portrait;
@@ -980,6 +1023,7 @@ python scripts/build_sync_map.py work/analysis.json --chords work/chords.json --
       wrap.className = 'hero-stage';
       wrap.innerHTML =
         `<div class="hero-backdrop" data-bd="${esc(state.stageBackdrop || 'dark')}"></div>
+         <div class="hero-glow" id="hero-glow"></div>
          <div class="hero-frames" id="hero-frames" data-blend="${esc(state.stageBlend || 'screen')}">
            <img id="hero-img" class="hero-layer show" src="${state.stageChar.portrait}" alt="">
            <img id="hero-img-alt" class="hero-layer" alt="">
@@ -988,7 +1032,8 @@ python scripts/build_sync_map.py work/analysis.json --chords work/chords.json --
            <div class="hero-chord" id="hero-chord">—</div>
            <div class="hero-hand" id="hero-hand"></div>
            <div id="hero-diagram"></div>
-         </div>`;
+         </div>
+         <div class="hero-vignette"></div>`;
       host.appendChild(wrap);
     } else {
       const holder = document.createElement('div');
@@ -999,6 +1044,7 @@ python scripts/build_sync_map.py work/analysis.json --chords work/chords.json --
       state.performer.setPalette(state.stageChar && state.stageChar.palette);
     }
     if (hud) host.appendChild(hud);
+    if (exit) host.appendChild(exit);
 
     const sel = $('#stage-char');
     if (sel) sel.addEventListener('change', () => {
@@ -1041,11 +1087,21 @@ python scripts/build_sync_map.py work/analysis.json --chords work/chords.json --
       // A still render can't fret a chord, but it can breathe with the music:
       // a subtle push on each beat keeps the hero alive without faking playing.
       const frames = $('#hero-frames');
+      const pulse = P.playing ? Math.max(0, 1 - beat.phase * 3.2) * (beat.isDown ? 1 : .55) : 0;
       if (frames) {
-        const pulse = P.playing ? Math.max(0, 1 - beat.phase * 3.2) * (beat.isDown ? 1 : .55) : 0;
         const sway = P.playing ? Math.sin((beat.index % 8 + beat.phase) / 8 * Math.PI * 2) : 0;
+        // A slow drift across the bar keeps the frame alive between chord
+        // changes, when the photograph itself is not changing at all.
+        const drift = P.playing ? Math.sin((beat.index % 32 + beat.phase) / 32 * Math.PI * 2) : 0;
         frames.style.transform =
-          `scale(${(1.015 + pulse * 0.02 * energy).toFixed(4)}) translateX(${(sway * 6 * energy).toFixed(2)}px)`;
+          `scale(${(1.02 + pulse * 0.02 * energy + drift * 0.012).toFixed(4)}) ` +
+          `translate(${(sway * 6 * energy).toFixed(2)}px, ${(drift * 5).toFixed(2)}px)`;
+      }
+      // Stage light behind the performer, breathing on the beat.
+      const glow = $('#hero-glow');
+      if (glow) {
+        glow.style.opacity = (0.28 + pulse * 0.5 * energy).toFixed(3);
+        glow.style.transform = `scale(${(1 + pulse * 0.10 * energy).toFixed(4)})`;
       }
       const hc = $('#hero-chord');
       if (hc && hc.textContent !== (chord || '—')) hc.textContent = chord || '—';
@@ -1891,6 +1947,9 @@ python scripts/extract_chords.py work/audio.wav --beats work/analysis.json --out
     if (routeEl) {
       state.route = routeEl.dataset.route;
       state.activeLesson = null;
+      // Focus mode belongs to the stage; navigating away must not leave the
+      // rest of the app with its chrome hidden.
+      if (state.stageFocus && routeEl.dataset.route !== 'stage') setStageFocus(false);
       render();
       $('#main').scrollTop = 0;
       return;
@@ -2195,6 +2254,13 @@ python scripts/extract_chords.py work/audio.wav --beats work/analysis.json --out
       return render();
     }
 
+    if (a === 'stage-settings') {
+      state.stageSettings = !state.stageSettings;
+      return render();
+    }
+    if (a === 'stage-focus') { return setStageFocus(true); }
+    if (a === 'stage-unfocus') { return setStageFocus(false); }
+
     // stage backdrop and blend
     const bd = e.target.closest('[data-bd]');
     if (bd && bd.classList.contains('chip')) {
@@ -2279,7 +2345,16 @@ python scripts/extract_chords.py work/audio.wav --beats work/analysis.json --out
       if (e.code === 'Space') { e.preventDefault(); P.toggle(); }
       if (e.code === 'ArrowLeft') P.nudge(-5);
       if (e.code === 'ArrowRight') P.nudge(5);
-      if (e.code === 'Escape') closeModal();
+      // Escape backs out one level at a time: a modal first, then focus mode.
+      if (e.code === 'Escape') {
+        if ($('.modal-back')) closeModal();
+        else if (state.stageFocus) setStageFocus(false);
+      }
+    });
+    // Leaving fullscreen by any other route — Esc handled by the browser, the
+    // system gesture, a swipe — must not leave the layout stuck in focus mode.
+    document.addEventListener('fullscreenchange', () => {
+      if (!document.fullscreenElement && state.stageFocus) setStageFocus(false);
     });
 
     P.init('yt-mount');

@@ -333,6 +333,55 @@ a { color: inherit; text-decoration: none; }
 .hud-pill b { color: var(--accent); }
 /* hero mode: the realistic render on stage, fingering overlaid */
 .hero-stage { position: relative; aspect-ratio: 16/10; overflow: hidden; background: #000; }
+/* ---------- stage: collapsible settings and focus mode ---------- */
+.stage-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
+.stage-head .page-head { flex: 1; min-width: 0; }
+.panel-toggle {
+  display: flex; align-items: center; justify-content: space-between; width: 100%;
+  font-weight: 700; font-size: 13px; color: var(--text-2); padding: 2px 0 10px;
+}
+.panel-caret { color: var(--text-3); font-size: 11px; }
+.side-panel.collapsed .panel-body { display: none; }
+.side-panel.collapsed .panel-toggle { padding-bottom: 0; }
+
+.stage-exit { display: none; }
+
+/* Focus mode: the performance fills the viewport and everything that
+   configures it steps out of the layout. Same on phone and desktop — the
+   settings column outgrew the screen on both. */
+body.stage-focus .sidebar,
+body.stage-focus .topbar,
+body.stage-focus .player,
+body.stage-focus .sidebar-scrim,
+body.stage-focus .stage-head,
+body.stage-focus .stage-wrap > div:last-child { display: none; }
+body.stage-focus .app { grid-template-columns: 1fr; grid-template-rows: 1fr; }
+body.stage-focus .main { overflow: hidden; }
+body.stage-focus .page { padding: 0; max-width: none; height: 100%; }
+body.stage-focus .stage-wrap { display: block; height: 100%; }
+body.stage-focus .stage {
+  aspect-ratio: auto; height: 100dvh; height: 100vh;
+  display: grid; place-items: center; border-radius: 0; border: 0;
+}
+body.stage-focus .stage > div:not(.stage-hud):not(.hero-stage) { width: min(100%, 1100px); }
+body.stage-focus .hero-stage { width: 100%; height: 100%; aspect-ratio: auto; }
+body.stage-focus .stage svg { max-height: 100dvh; }
+body.stage-focus .stage-exit {
+  display: grid; place-items: center;
+  position: absolute; inset-block-start: 16px; inset-inline-end: 16px; z-index: 60;
+  width: 42px; height: 42px; border-radius: 50%;
+  background: rgba(0,0,0,.55); backdrop-filter: blur(14px);
+  border: 1px solid var(--line-2); color: var(--text); font-size: 17px;
+}
+/* The chord is the one piece of information that stays. */
+body.stage-focus .stage-hud {
+  /* Physical properties here on purpose: this is centring, not text flow, so
+     it must land the same way in either direction. */
+  top: auto; bottom: calc(20px + env(safe-area-inset-bottom));
+  left: 50%; inset-inline-start: auto; transform: translateX(-50%);
+  justify-content: center; font-size: 15px;
+}
+
 /* The scene a cut-out performer stands in. It sits behind both frames, so it
    stays put while the player changes with the chord — which is the whole point
    of removing the backdrop from the generated images. */
@@ -353,6 +402,24 @@ a { color: inherit; text-decoration: none; }
     radial-gradient(90% 70% at 50% 12%, #6b4a22 0%, #2a1c0d 60%, #100a05 100%);
 }
 .hero-backdrop[data-bd="none"] { background: #000; }
+
+/* Stage light behind the performer. It breathes on the beat, which is what
+   stops a photograph that only changes on chord changes from reading as a
+   slideshow between them. */
+.hero-glow {
+  position: absolute; inset: 0; pointer-events: none;
+  background: radial-gradient(46% 52% at 50% 42%,
+    rgba(0,229,208,.34), rgba(53,160,255,.13) 46%, transparent 72%);
+  transition: opacity .1s linear, transform .1s linear;
+  opacity: .28;
+}
+/* Framing, so the picture ends in the scene rather than at a hard rectangle. */
+.hero-vignette {
+  position: absolute; inset: 0; pointer-events: none;
+  background:
+    radial-gradient(78% 78% at 50% 46%, transparent 52%, rgba(0,0,0,.55) 100%),
+    linear-gradient(to top, rgba(0,0,0,.5), transparent 26%);
+}
 
 /* Two stacked frames so a chord change crossfades instead of blinking. The
    pulse transform lives on the wrapper, so both frames move together and the

@@ -290,6 +290,14 @@
         });
         refs.strings.push(s); gtr.appendChild(s);
       }
+      /* The fretting hand is split across the guitar so it reads as gripping
+         the neck rather than floating on top of it. What is anatomically
+         behind the neck — the palm and the whole length of the thumb — is
+         drawn first and the neck paints over it, leaving only the thumb tip
+         showing above the far edge. The fingers, which really do come over
+         the near edge onto the strings, are drawn after. */
+      refs.handBack = el('g', { id: 'mm-hand-back' });
+      svg.appendChild(refs.handBack);      // painted first, so the neck covers it
       svg.appendChild(gtr);
 
       /* finger markers are created here but appended last: the fingering is the
@@ -301,9 +309,10 @@
       refs.armStrum = limb('arm-strum', 21, 'url(#mm-skin)');
       svg.appendChild(refs.armStrum.g);
       svg.appendChild(refs.armFret.g);
-      refs.handFret = el('ellipse', { rx: 17, ry: 13, fill: 'url(#mm-skin)', stroke: 'rgba(0,0,0,.25)' });
+      // The fingers that come over the near edge of the neck onto the strings.
+      refs.handFront = el('g', { id: 'mm-hand-front' });
+      svg.appendChild(refs.handFront);
       refs.handStrum = el('ellipse', { rx: 15, ry: 12, fill: 'url(#mm-skin)', stroke: 'rgba(0,0,0,.25)' });
-      svg.appendChild(refs.handFret);
       svg.appendChild(refs.handStrum);
       refs.pick = el('path', { d: 'M -6 -7 L 6 -7 L 0 8 Z', fill: '#ffd166', opacity: .95 });
       svg.appendChild(refs.pick);
@@ -423,7 +432,9 @@
           g.appendChild(el('circle', { cx: p.x, cy: p.y, r: 5.5, fill: 'none', stroke: '#ffffff', 'stroke-width': 2, opacity: .8 }));
         } else {
           const p = fingerPoint(i, fret);
-          pressed.push(p);
+          // Carry the fret and string along: the hand geometry needs to know
+          // which finger reaches where, not just the bare point.
+          pressed.push({ x: p.x, y: p.y, fret, string: i });
           if (!(f.barre && fret === f.baseFret)) {
             // Adjacent strings put fingertips almost on top of each other — true to
             // life, so an outline keeps them readable as separate fingers.
@@ -453,6 +464,95 @@
         const p = neckPoint(fretDist(1), 0);
         refs.fretTarget = { x: p.x - G.px * under, y: p.y - G.py * under };
       }
+      buildFrettingHand(f, pressed);
+    }
+
+    /**
+     * Draws the hand that is holding the neck, in two halves so the neck can
+     * come between them.
+     *
+     * A hand laid flat on top of the fretboard is the giveaway that nobody is
+     * really holding anything. A real grip wraps: the palm is under the neck,
+     * the thumb runs along the back of it and only its tip clears the far
+     * edge, and the fingers arch over the near edge and come down on the
+     * strings. So the palm and thumb go behind the guitar and the fingers in
+     * front of it, and the occlusion does the rest.
+     */
+    function buildFrettingHand(f, pressed) {
+      const back = refs.handBack, front = refs.handFront;
+      if (!back || !front) return;
+      while (back.firstChild) back.removeChild(back.firstChild);
+      while (front.firstChild) front.removeChild(front.firstChild);
+      if (!f) return;
+
+      // Where along the neck the hand is: the pressed cluster, or first
+      // position when the chord is all open strings.
+      const dists = pressed.length
+        ? pressed.map(p => (fretDist(p.fret - 1) + fretDist(p.fret)) / 2)
+        : [(fretDist(0) + fretDist(1)) / 2];
+      const dPalm = dists.reduce((s, d) => s + d, 0) / dists.length;
+      const hw = halfWidth(dPalm);
+      const skin = 'url(#mm-skin)';
+      const edge = 'rgba(0,0,0,.28)';
+
+      /* ---- behind the neck ---- */
+      // Palm: sits below the near edge and reaches up past it, so the neck
+      // cuts its top and the hand reads as being *around* the neck.
+      const palm = neckPoint(dPalm + 6, -(hw + 15));
+      back.appendChild(el('ellipse', {
+        cx: palm.x, cy: palm.y, rx: 34, ry: 25, fill: skin, stroke: edge,
+        transform: `rotate(${G.angle} ${palm.x} ${palm.y})`
+      }));
+      // Wrist: without it the forearm ends in mid-air next to the palm.
+      const wrist = neckPoint(dPalm + 30, -(hw + 26));
+      back.appendChild(el('line', {
+        x1: wrist.x, y1: wrist.y, x2: palm.x, y2: palm.y,
+        stroke: skin, 'stroke-width': 26, 'stroke-linecap': 'round'
+      }));
+      // Thumb: runs up the back of the neck, crossing it. Only the part past
+      // the far edge survives the guitar being painted over this group.
+      const tA = neckPoint(dPalm - 2, -(hw - 2));
+      const tB = neckPoint(dPalm - 16, hw + 9);
+      back.appendChild(el('line', {
+        x1: tA.x, y1: tA.y, x2: tB.x, y2: tB.y,
+        stroke: edge, 'stroke-width': 16.5, 'stroke-linecap': 'round', opacity: .5
+      }));
+      back.appendChild(el('line', {
+        x1: tA.x, y1: tA.y, x2: tB.x, y2: tB.y,
+        stroke: skin, 'stroke-width': 15, 'stroke-linecap': 'round'
+      }));
+
+      /* ---- in front of the neck ---- */
+      // One finger per pressed string, fanned from the knuckle row under the
+      // near edge. A barre is a single finger laid flat instead.
+      if (f.barre) {
+        const a = neckPoint((fretDist(f.baseFret - 1) + fretDist(f.baseFret)) / 2, hw + 3);
+        const b = neckPoint((fretDist(f.baseFret - 1) + fretDist(f.baseFret)) / 2, -(hw + 12));
+        front.appendChild(el('line', {
+          x1: a.x, y1: a.y, x2: b.x, y2: b.y,
+          stroke: edge, 'stroke-width': 14.5, 'stroke-linecap': 'round', opacity: .35
+        }));
+        front.appendChild(el('line', {
+          x1: a.x, y1: a.y, x2: b.x, y2: b.y,
+          stroke: skin, 'stroke-width': 13, 'stroke-linecap': 'round'
+        }));
+      }
+      const arch = pressed.filter(p => !(f.barre && p.fret === f.baseFret));
+      arch.forEach((p, k) => {
+        // Knuckles fan along the neck so the fingers are not a parallel comb.
+        const spread = (k - (arch.length - 1) / 2) * 11;
+        const kn = neckPoint(dPalm + spread + 6, -(hw + 11));
+        // Control point pulls the curve outward, giving the arched knuckle.
+        const mx = (kn.x + p.x) / 2 - G.px * 9 + G.ux * 3;
+        const my = (kn.y + p.y) / 2 - G.py * 9 + G.uy * 3;
+        const d = `M ${kn.x} ${kn.y} Q ${mx} ${my} ${p.x} ${p.y}`;
+        front.appendChild(el('path', {
+          d, fill: 'none', stroke: edge, 'stroke-width': 12, 'stroke-linecap': 'round', opacity: .32
+        }));
+        front.appendChild(el('path', {
+          d, fill: 'none', stroke: skin, 'stroke-width': 10.5, 'stroke-linecap': 'round'
+        }));
+      });
     }
 
     function placePianoFingers(name) {
@@ -552,8 +652,9 @@
       refs.armFret.a.setAttribute('x2', ik1.ex); refs.armFret.a.setAttribute('y2', ik1.ey);
       refs.armFret.b.setAttribute('x1', ik1.ex); refs.armFret.b.setAttribute('y1', ik1.ey);
       refs.armFret.b.setAttribute('x2', ik1.hx); refs.armFret.b.setAttribute('y2', ik1.hy);
-      refs.handFret.setAttribute('cx', ik1.hx); refs.handFret.setAttribute('cy', ik1.hy);
-      refs.handFret.setAttribute('transform', `rotate(${G.angle + 90} ${ik1.hx} ${ik1.hy})`);
+      // The fretting hand is drawn from the chord geometry, not moved per
+      // frame: it is gripping a neck that does not move, so it must not drift.
+      // The arm reaches the same palm point, which is what fretTarget is.
 
       // strumming hand: a real sweep across the strings, down on the beat
       const sweepRaw = beat.phase < 0.5 ? beat.phase * 2 : (1 - beat.phase) * 2;
