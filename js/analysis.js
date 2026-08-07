@@ -188,9 +188,12 @@
   /** Human summary line, the way the skill asks for it. */
   function summaryLine(a) {
     if (!a || !a.bpm) return 'לא נותח';
-    const modeHe = a.key.mode === 'minor' ? 'מינור' : 'מז׳ור';
-    const tonicHe = MM.PITCHES_HE[a.key.tonic] || a.key.tonic;
-    let s = `${Math.round(a.bpm)} BPM · ${tonicHe} ${modeHe}`;
+    const k = MM.keyOf(a);
+    let s = `${Math.round(a.bpm)} BPM`;
+    if (k) {
+      const modeHe = k.mode === 'minor' ? 'מינור' : 'מז׳ור';
+      s += ` · ${MM.PITCHES_HE[k.tonic] || k.tonic} ${modeHe}`;
+    }
     if (a.chords && a.chords.length) {
       const prog = [];
       for (const c of a.chords) if (!prog.length || prog[prog.length - 1] !== c.chord) prog.push(c.chord);

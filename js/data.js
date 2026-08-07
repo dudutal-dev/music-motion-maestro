@@ -354,6 +354,22 @@
   }
   const thumbUrl = id => `https://i.ytimg.com/vi/${id}/hqdefault.jpg`;
 
+  /**
+   * The key of an analysis, or null when it does not have one.
+   *
+   * Every caller guarded on `analysis.bpm` and then read `analysis.key.tonic`,
+   * which is a different question. A record carrying a tempo but no key — a
+   * hand-edited backup, an import that was cut short, an older export — took
+   * the whole library view down with it. Returning null rather than a made-up
+   * default keeps callers from printing a key nobody detected.
+   */
+  const keyOf = a => (a && a.key && a.key.tonic) ? a.key : null;
+  /** "Am" / "C" / '' — the short label used on badges. */
+  const keyLabel = a => {
+    const k = keyOf(a);
+    return k ? k.tonic + (k.mode === 'minor' ? 'm' : '') : '';
+  };
+
   /* ---------- reading a track's details off the link ----------
      Asking someone to retype the title and artist that are already
      sitting in the URL is busywork. YouTube's oEmbed endpoint hands
@@ -557,6 +573,6 @@
     parseChord, guitarFingering, pianoVoicing, romanNumeral,
     guitarFingeringSentence, pianoVoicingSentence, fingeringSentence,
     visualFingering, neckLandmark, requiredLandmark, transposeChord, capoShapes,
-    parseVideoId, thumbUrl, fetchMeta, cleanTitle, splitTitle, Store, Posters
+    parseVideoId, thumbUrl, keyOf, keyLabel, fetchMeta, cleanTitle, splitTitle, Store, Posters
   };
 })(window);

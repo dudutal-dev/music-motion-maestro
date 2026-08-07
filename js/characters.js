@@ -348,7 +348,9 @@
     L.push('');
     if (a && a.bpm) {
       const bar = (240 / a.bpm) * ((a.timeSignature || 4) / 4);
-      L.push(`> One prompt, whole clip. ${Math.round(a.bpm)} BPM · key ${a.key.tonic} ${a.key.mode} · ` +
+      const k = MM.keyOf(a);
+      L.push(`> One prompt, whole clip. ${Math.round(a.bpm)} BPM · ` +
+        (k ? `key ${k.tonic} ${k.mode} · ` : '') +
         `${mmss(a.duration || 0)} · bar = ${bar.toFixed(2)}s · instrument: ${instEn}` +
         (a.mood ? ` · mood ${a.mood}` : ''));
     } else {

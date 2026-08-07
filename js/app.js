@@ -33,6 +33,15 @@
     // stack above it and push the performance off the screen, so they fold.
     stageSettings: null,
     stageFocus: false,
+    /* The stage holds the character's id, not the character.
+       It used to keep the object, and switching instrument replaced it with a
+       plain copy carrying the new instrument. From then on the stage was
+       looking at a snapshot: attaching an image to that character afterwards
+       changed nothing it could see, so the realistic view stayed greyed out
+       with "no image attached" no matter what you did. The instrument override
+       lives on its own now, and the character is always read fresh. */
+    stageCharId: null,
+    stageInst: null,        // null = follow whatever the character plays
     transpose: 0,
     capo: 0,
     loop: null,
@@ -223,7 +232,7 @@
       </div>
       <div class="row-analysis">
         ${a && a.bpm ? `<span class="pill on">${Math.round(a.bpm)} BPM</span>
-          <span class="pill on">${esc(a.key.tonic)}${a.key.mode === 'minor' ? 'm' : ''}</span>`
+          ${MM.keyLabel(a) ? `<span class="pill on">${esc(MM.keyLabel(a))}</span>` : ''}`
         : `<span class="pill">לא נותח</span>`}
       </div>
       <div class="row-tag">${esc(t.genre || '')}</div>
@@ -248,6 +257,17 @@
    * followed song A — the character fretted one song's chords over another
    * song's audio, in perfect sync with nothing.
    */
+  /** The character on stage, read fresh so later edits are always visible. */
+  function stageChar() {
+    return state.stageCharId ? Store.getCharacter(state.stageCharId) : null;
+  }
+  /** The instrument being played: an explicit override, else the character's. */
+  function stageInstrument() {
+    if (state.stageInst) return state.stageInst;
+    const c = stageChar();
+    return c && c.instrument === 'piano' ? 'piano' : 'guitar';
+  }
+
   function ensureStageTrack() {
     const cur = state.currentTrackId ? Store.getTrack(state.currentTrackId) : null;
 
@@ -472,12 +492,12 @@
             <div class="chips">
               <button class="chip ${state.stageMode !== 'hero' ? 'active' : ''}" data-mode="anim">🎬 אנימציה</button>
               <button class="chip ${state.stageMode === 'hero' ? 'active' : ''}" data-mode="hero"
-                ${state.stageChar && state.stageChar.portrait ? '' : 'disabled'}>🖼️ דמות ריאליסטית</button>
+                ${stageChar() && stageChar().portrait ? '' : 'disabled'}>🖼️ דמות ריאליסטית</button>
             </div>
             ${(() => {
               // In realistic mode the poster supplies a real photo per chord.
               // Say how many are in play, so a still hero is never a mystery.
-              if (!(state.stageChar && state.stageChar.portrait)) return '';
+              if (!(stageChar() && stageChar().portrait)) return '';
               const n = Object.keys(posterImages).length;
               const backdrops = [['none', 'שחור'], ['dark', 'אולם חשוך'],
                                  ['stage', 'במה'], ['warm', 'שעת זהב']];
@@ -506,27 +526,28 @@
             ${(() => {
               // A greyed-out button with a hover tooltip explains nothing — least
               // of all on a touch screen. Say what is missing, and offer the fix.
-              if (state.stageChar && state.stageChar.portrait) return '';
-              const named = state.stageChar && state.stageChar.id;
+              if (stageChar() && stageChar().portrait) return '';
+              const sc = stageChar();
+              const named = sc && sc.id;
               return `<div class="hint" style="margin-top:9px">
                 ${named
-                  ? `ל<b>${esc(state.stageChar.name)}</b> אין תמונה מצורפת, ולכן התצוגה
+                  ? `ל<b>${esc(sc.name)}</b> אין תמונה מצורפת, ולכן התצוגה
                      הריאליסטית כבויה. האנימציה עובדת — אבל היא לא מציגה את הדמות עצמה.`
                   : 'בחר דמות למטה, וצרף לה תמונה כדי להפעיל את התצוגה הריאליסטית.'}
                 ${named ? `<button class="btn btn-sm" style="margin-top:9px"
-                   data-action="edit-char" data-id="${state.stageChar.id}">צרף תמונה לדמות</button>` : ''}
+                   data-action="edit-char" data-id="${sc.id}">צרף תמונה לדמות</button>` : ''}
               </div>`;
             })()}
             <h3 style="margin-top:16px">כלי נגינה</h3>
             <div class="chips">
-              <button class="chip ${(!state.stageChar || state.stageChar.instrument !== 'piano') ? 'active' : ''}" data-inst="guitar">🎸 גיטרה</button>
-              <button class="chip ${state.stageChar && state.stageChar.instrument === 'piano' ? 'active' : ''}" data-inst="piano">🎹 פסנתר</button>
+              <button class="chip ${stageInstrument() !== 'piano' ? 'active' : ''}" data-inst="guitar">🎸 גיטרה</button>
+              <button class="chip ${stageInstrument() === 'piano' ? 'active' : ''}" data-inst="piano">🎹 פסנתר</button>
             </div>
             ${chars.length ? `<div style="margin-top:16px">
               <h3>דמות</h3>
               <select class="field" id="stage-char" style="width:100%;background:var(--bg-elev);border:1px solid var(--line);border-radius:8px;padding:9px">
                 <option value="">— דמות ברירת מחדל —</option>
-                ${chars.map(c => `<option value="${c.id}" ${state.stageChar && state.stageChar.id === c.id ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}
+                ${chars.map(c => `<option value="${c.id}" ${state.stageCharId === c.id ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}
               </select></div>` : ''}
             </div><!-- /panel-body -->
           </div>
@@ -851,7 +872,7 @@
     const a = $('#hero-img'), alt = $('#hero-img-alt');
     if (!a || !alt) return;
     const want = (chord && posterImages[chord]) ||
-                 (state.stageChar && state.stageChar.portrait);
+                 (stageChar() && stageChar().portrait);
     if (!want) return;
     const showing = a.classList.contains('show') ? a : alt;
     if (showing.getAttribute('src') === want) return;
@@ -1179,7 +1200,7 @@ python scripts/build_sync_map.py work/analysis.json --chords work/chords.json --
     const card = host.querySelector('.stage-chordcard');
     host.innerHTML = '';
 
-    const heroMode = state.stageMode === 'hero' && state.stageChar && state.stageChar.portrait;
+    const heroMode = state.stageMode === 'hero' && stageChar() && stageChar().portrait;
     if (heroMode) {
       // The realistic render is the visual; the fingering stays exact in the
       // overlay, so you get the photoreal look without losing the accuracy.
@@ -1190,7 +1211,7 @@ python scripts/build_sync_map.py work/analysis.json --chords work/chords.json --
         `<div class="hero-backdrop" data-bd="${esc(state.stageBackdrop || 'dark')}"></div>
          <div class="hero-glow" id="hero-glow"></div>
          <div class="hero-frames" id="hero-frames" data-blend="${esc(state.stageBlend || 'screen')}">
-           <img id="hero-img" class="hero-layer show" src="${state.stageChar.portrait}" alt="">
+           <img id="hero-img" class="hero-layer show" src="${stageChar().portrait}" alt="">
            <img id="hero-img-alt" class="hero-layer" alt="">
          </div>
          <div class="hero-overlay">
@@ -1205,8 +1226,8 @@ python scripts/build_sync_map.py work/analysis.json --chords work/chords.json --
       host.appendChild(holder);
       state.performer = PF.create(holder);
       state.performer.setInstrument(
-        state.stageChar && state.stageChar.instrument === 'piano' ? 'piano' : 'guitar');
-      state.performer.setPalette(state.stageChar && state.stageChar.palette);
+        stageInstrument());
+      state.performer.setPalette((stageChar() || {}).palette);
     }
     if (hud) host.appendChild(hud);
     if (exit) host.appendChild(exit);
@@ -1214,7 +1235,8 @@ python scripts/build_sync_map.py work/analysis.json --chords work/chords.json --
 
     const sel = $('#stage-char');
     if (sel) sel.addEventListener('change', () => {
-      state.stageChar = sel.value ? Store.getCharacter(sel.value) : null;
+      state.stageCharId = sel.value || null;
+      state.stageInst = null;   // a new character brings its own instrument
       render();
     });
     renderChordList(t);
@@ -1337,7 +1359,7 @@ python scripts/build_sync_map.py work/analysis.json --chords work/chords.json --
     if (!chord) { box.textContent = 'אין אקורד בנקודה הזו.'; if (dia) dia.innerHTML = ''; return; }
     const isPiano = state.performer
       ? state.performer.instrument === 'piano'
-      : !!(state.stageChar && state.stageChar.instrument === 'piano');
+      : stageInstrument() === 'piano';
     let handText = '', diagram = '';
     if (isPiano) {
       const v = MM.pianoVoicing(chord, 4);
@@ -1413,7 +1435,7 @@ python scripts/build_sync_map.py work/analysis.json --chords work/chords.json --
     state.lastBar = -1;
     state.loop = null;
     lastReadoutChord = null;
-    if (state.stageChar && state.stageChar.instrument) {
+    if (stageChar()) {
       // keep instrument choice
     }
     P.load(t.videoId, true);
@@ -1646,9 +1668,9 @@ python scripts/build_sync_map.py work/analysis.json --chords work/chords.json --
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
         <span class="pill ${badge(conf.tempo)}">קצב ${Math.round(a.bpm)} BPM · ${esc(note(conf.tempo || 0))}</span>
-        <span class="pill ${badge(conf.key)}">סולם ${esc(a.key.tonic)}${a.key.mode === 'minor' ? 'm' : ''} · ${esc(note(conf.key || 0))}</span>
-        <span class="pill">${a.beatTimes.length} ביטים</span>
-        <span class="pill">${a.sections.length} סקשנים</span>
+        ${MM.keyLabel(a) ? `<span class="pill ${badge(conf.key)}">סולם ${esc(MM.keyLabel(a))} · ${esc(note(conf.key || 0))}</span>` : ''}
+        <span class="pill">${(a.beatTimes || []).length} ביטים</span>
+        <span class="pill">${(a.sections || []).length} סקשנים</span>
       </div>
       ${prog.length ? `<div class="next-chords">${prog.slice(0, 20).map(c =>
         `<span class="next-chord">${esc(c)}</span>`).join('')}</div>` : ''}
@@ -2465,8 +2487,7 @@ python scripts/extract_chords.py work/audio.wav --beats work/analysis.json --out
     const inst = e.target.closest('[data-inst]');
     if (inst && state.route === 'stage') {
       if (state.performer) state.performer.setInstrument(inst.dataset.inst);
-      if (!state.stageChar) state.stageChar = { instrument: inst.dataset.inst };
-      else state.stageChar = Object.assign({}, state.stageChar, { instrument: inst.dataset.inst });
+      state.stageInst = inst.dataset.inst;
       lastReadoutChord = null;
       document.querySelectorAll('[data-inst]').forEach(b =>
         b.classList.toggle('active', b === inst));
