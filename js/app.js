@@ -557,9 +557,37 @@
      The generated images arrive one per chord — no model holds 30 distinct
      correct hand shapes in a single frame. This lays them out into the sheet
      and burns in the chord name and diagram, which is where the accuracy
-     actually lives. Images stay in memory only; 30 of them would blow the
-     localStorage budget, and the export is the artifact worth keeping. */
-  const posterImages = {};   // chord -> dataURL (session only)
+     actually lives.
+
+     The images are kept in IndexedDB, not localStorage: thirty of them are far
+     past that budget. This object is the in-memory mirror that rendering reads,
+     since the view is synchronous and IndexedDB is not. */
+  const posterImages = {};
+  let postersLoaded = false, postersPersist = true;
+
+  /** Fills the mirror from storage once, then re-renders if the user is looking. */
+  function loadPosters() {
+    if (postersLoaded) return Promise.resolve();
+    postersLoaded = true;
+    return MM.Posters.all().then(map => {
+      Object.assign(posterImages, map);
+      if (state.route === 'poster') render();
+    }).catch(() => {
+      // Private browsing disables IndexedDB. Keep working for this session and
+      // say so, rather than failing silently and losing the work again later.
+      postersPersist = false;
+      if (state.route === 'poster') render();
+    });
+  }
+
+  /** Writes through to storage; the caller has already updated the mirror. */
+  function persistPoster(chord, url) {
+    if (!postersPersist) return;
+    (url === null ? MM.Posters.remove(chord) : MM.Posters.set(chord, url)).catch(() => {
+      postersPersist = false;
+      toast('התמונות לא נשמרות בדפדפן הזה — ייצא את הפוסטר לפני שתסגור', true);
+    });
+  }
 
   function viewPoster() {
     const groups = MM.CHORD_GROUPS.filter(g => state.posterGroups.includes(g.id));
@@ -779,7 +807,9 @@ python scripts/build_sync_map.py work/analysis.json --chords work/chords.json --
       </div>
       <div class="panel">
         <div class="panel-title">גיבוי</div>
-        <div class="panel-desc">${s.tracks.length} שירים · ${s.characters.length} דמויות שמורים בדפדפן הזה.</div>
+        <div class="panel-desc">${s.tracks.length} שירים · ${s.characters.length} דמויות · <span id="backup-posters">…</span> תמונות פוסטר,
+          שמורים בדפדפן הזה. הגיבוי כולל את הכל — כולל תמונות הפוסטר, ולכן הקובץ
+          יכול להיות כבד.</div>
         <div style="display:flex;gap:10px;flex-wrap:wrap">
           <button class="btn" data-action="export">ייצא גיבוי</button>
           <button class="btn" data-action="import">ייבא גיבוי</button>
@@ -795,6 +825,13 @@ python scripts/build_sync_map.py work/analysis.json --chords work/chords.json --
   function render() {
     renderSidebar();
     if (state.route === 'stage' || state.route === 'chart') ensureStageTrack();
+    if (state.route === 'poster') loadPosters();
+    if (state.route === 'settings') {
+      loadPosters().then(() => {
+        const el = $('#backup-posters');
+        if (el) el.textContent = Object.keys(posterImages).length;
+      });
+    }
     const views = {
       home: viewHome, library: viewLibrary, stage: viewStage,
       chart: viewChart, characters: viewCharacters, chords: viewChords, poster: viewPoster,
@@ -1728,6 +1765,7 @@ python scripts/extract_chords.py work/audio.wav --beats work/analysis.json --out
     if (a === 'poster-export') return exportPoster();
     if (a === 'poster-clear') {
       Object.keys(posterImages).forEach(k => delete posterImages[k]);
+      if (postersPersist) MM.Posters.clear().catch(() => {});
       return render();
     }
     if (a === 'poster-bulk') {
@@ -1741,7 +1779,7 @@ python scripts/extract_chords.py work/audio.wav --beats work/analysis.json --out
         let ok = 0;
         files.slice(0, total).forEach((f, i) => {
           loadPortrait(f, url => {
-            if (url) { posterImages[slots[i]] = url; ok++; }
+            if (url) { posterImages[slots[i]] = url; persistPoster(slots[i], url); ok++; }
             // count every outcome, so one bad file cannot strand the batch
             if (++done === total) { toast(ok + ' תמונות שובצו'); render(); }
           });
@@ -1762,7 +1800,12 @@ python scripts/extract_chords.py work/audio.wav --beats work/analysis.json --out
       const ch = cell.dataset.cell;
       const inp = document.createElement('input');
       inp.type = 'file'; inp.accept = 'image/*';
-      inp.onchange = () => { const f = inp.files[0]; if (f) loadPortrait(f, url => { if (url) { posterImages[ch] = url; render(); } }); };
+      inp.onchange = () => {
+        const f = inp.files[0];
+        if (f) loadPortrait(f, url => {
+          if (url) { posterImages[ch] = url; persistPoster(ch, url); render(); }
+        });
+      };
       inp.click(); return;
     }
     if (a === 'export-diagram') return exportChordDiagram(act.dataset.chord);
@@ -1805,11 +1848,19 @@ python scripts/extract_chords.py work/audio.wav --beats work/analysis.json --out
     if (a === 'back10') return P.nudge(-10);
     if (a === 'fwd10') return P.nudge(10);
     if (a === 'export') {
-      const blob = new Blob([Store.exportAll()], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url; link.download = 'maestro-backup.json'; link.click();
-      URL.revokeObjectURL(url); return;
+      // Reading the poster out of IndexedDB is asynchronous, so the file is
+      // only built once it is actually in hand.
+      toast('מכין גיבוי…');
+      Store.exportAll().then(json => {
+        const blob = new Blob([json], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url; link.download = 'maestro-backup.json'; link.click();
+        setTimeout(() => URL.revokeObjectURL(url), 4000);
+        const mb = (blob.size / 1048576).toFixed(1);
+        toast(`הגיבוי ירד · ${mb}MB`);
+      }).catch(() => toast('הכנת הגיבוי נכשלה', true));
+      return;
     }
     if (a === 'import') {
       const inp = document.createElement('input');
@@ -1818,16 +1869,27 @@ python scripts/extract_chords.py work/audio.wav --beats work/analysis.json --out
         const f = inp.files[0]; if (!f) return;
         const r = new FileReader();
         r.onload = () => {
-          try { Store.importAll(r.result); toast('הגיבוי יובא'); render(); }
-          catch (err) { toast('קובץ לא תקין', true); }
+          Store.importAll(r.result).then(res => {
+            // Reload the mirror so the restored poster shows without a refresh.
+            postersLoaded = false;
+            Object.keys(posterImages).forEach(k => delete posterImages[k]);
+            return loadPosters().then(() => {
+              toast(res.posters
+                ? `הגיבוי יובא · ${res.posters} תמונות פוסטר`
+                : 'הגיבוי יובא');
+              render();
+            });
+          }).catch(() => toast('קובץ לא תקין', true));
         };
         r.readAsText(f);
       };
       inp.click(); return;
     }
     if (a === 'wipe') {
-      if (confirm('למחוק את כל השירים והדמויות? אי אפשר לבטל.')) {
-        localStorage.removeItem('maestro.studio.v1'); location.reload();
+      if (confirm('למחוק את כל השירים, הדמויות ותמונות הפוסטר? אי אפשר לבטל.')) {
+        localStorage.removeItem('maestro.studio.v1');
+        // The poster lives in a separate store, so wiping has to reach it too.
+        MM.Posters.clear().catch(() => {}).then(() => location.reload());
       }
       return;
     }

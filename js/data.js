@@ -461,11 +461,94 @@
     removeCharacter(id) { state.characters = state.characters.filter(c => c.id !== id); save(); },
     getCharacter(id) { return state.characters.find(c => c.id === id); },
     setSetting(k, v) { state.settings[k] = v; save(); },
-    exportAll() { return JSON.stringify(state, null, 2); },
-    importAll(json) {
+    /* The backup is what carries work between devices, so it has to include
+       the poster. Those images live in IndexedDB rather than localStorage,
+       which makes both of these asynchronous. */
+    async exportAll() {
+      const payload = Object.assign({}, state);
+      try { payload.posters = await Posters.all(); }
+      catch (e) { payload.posters = {}; }
+      return JSON.stringify(payload, null, 2);
+    },
+    async importAll(json) {
       const parsed = JSON.parse(json);
+      const posters = parsed.posters || {};
+      delete parsed.posters;                 // never let it into localStorage
       state = Object.assign(defaults(), parsed);
       save();
+      let restored = 0;
+      try { restored = await Posters.replaceAll(posters); } catch (e) { restored = 0; }
+      return { posters: restored, expected: Object.keys(posters).length };
+    }
+  };
+
+  /* ---------- poster images ----------
+     A finished poster is thirty generated images. Held in a plain object they
+     vanished on refresh and never reached the backup, so the work could not
+     move between devices. They are also far too large for localStorage, whose
+     budget is a few megabytes for everything. IndexedDB has room for them, at
+     the cost of being asynchronous.
+
+     Every call resolves rather than rejects on a missing or blocked database —
+     private-browsing modes disable IndexedDB outright — so the poster screen
+     degrades to session-only instead of breaking. */
+
+  const IDB_NAME = 'maestro.studio', IDB_STORE = 'posters';
+
+  function openDb() {
+    return new Promise((resolve, reject) => {
+      if (!global.indexedDB) return reject(new Error('IndexedDB unavailable'));
+      const req = global.indexedDB.open(IDB_NAME, 1);
+      req.onupgradeneeded = () => {
+        const db = req.result;
+        if (!db.objectStoreNames.contains(IDB_STORE))
+          db.createObjectStore(IDB_STORE, { keyPath: 'chord' });
+      };
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error || new Error('IndexedDB open failed'));
+      req.onblocked = () => reject(new Error('IndexedDB blocked'));
+    });
+  }
+
+  function withStore(mode, run) {
+    return openDb().then(db => new Promise((resolve, reject) => {
+      const t = db.transaction(IDB_STORE, mode);
+      let result;
+      run(t.objectStore(IDB_STORE), v => { result = v; });
+      t.oncomplete = () => { db.close(); resolve(result); };
+      t.onerror = () => { db.close(); reject(t.error); };
+      t.onabort = () => { db.close(); reject(t.error || new Error('aborted')); };
+    }));
+  }
+
+  const Posters = {
+    get available() { return !!global.indexedDB; },
+
+    all() {
+      return withStore('readonly', (s, set) => {
+        const req = s.getAll();
+        req.onsuccess = () => {
+          const map = {};
+          for (const r of req.result || []) map[r.chord] = r.data;
+          set(map);
+        };
+      });
+    },
+    set(chord, data) { return withStore('readwrite', s => s.put({ chord, data })); },
+    remove(chord)    { return withStore('readwrite', s => s.delete(chord)); },
+    clear()          { return withStore('readwrite', s => s.clear()); },
+
+    replaceAll(map) {
+      return withStore('readwrite', (s, set) => {
+        s.clear();
+        let n = 0;
+        for (const chord of Object.keys(map || {})) {
+          if (typeof map[chord] !== 'string') continue;
+          s.put({ chord, data: map[chord] });
+          n++;
+        }
+        set(n);
+      });
     }
   };
 
@@ -474,6 +557,6 @@
     parseChord, guitarFingering, pianoVoicing, romanNumeral,
     guitarFingeringSentence, pianoVoicingSentence, fingeringSentence,
     visualFingering, neckLandmark, requiredLandmark, transposeChord, capoShapes,
-    parseVideoId, thumbUrl, fetchMeta, cleanTitle, splitTitle, Store
+    parseVideoId, thumbUrl, fetchMeta, cleanTitle, splitTitle, Store, Posters
   };
 })(window);
