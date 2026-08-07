@@ -1141,6 +1141,41 @@ python scripts/build_sync_map.py work/analysis.json --chords work/chords.json --
   let autoAnalysis = null;
   let captureControl = {};
 
+  /* Offers only the capture routes this browser actually has, and defaults to
+     the best one available. Tab audio is the accurate route but exists on
+     desktop Chrome and Edge alone; the microphone is what phones have. Showing
+     a dead option and letting it fail at the picker is how the previous
+     version left mobile users stranded. */
+  function wireCaptureSource() {
+    const sel = $('#cap-source'), hint = $('#cap-source-hint');
+    if (!sel) return;
+    const opts = [];
+    if (AA.canCaptureTab()) opts.push(['tab', '🔊 הקול של הכרטיסייה — מדויק']);
+    if (AA.canCaptureMic()) opts.push(['mic', '🎤 מיקרופון — עובד גם בנייד']);
+
+    if (!opts.length) {
+      sel.innerHTML = '<option>אין קליטה זמינה בדפדפן הזה</option>';
+      sel.disabled = true;
+      const btn = $('[data-action="capture-tab"]');
+      if (btn) btn.disabled = true;
+      hint.innerHTML = 'הדפדפן הזה לא מאפשר לא הקלטת כרטיסייה ולא מיקרופון. ' +
+                       'השתמש ב<b>"ניתוח מונחה"</b> — הוא עובד בכל מקום.';
+      return;
+    }
+    sel.innerHTML = opts.map(([v, l]) => `<option value="${v}">${l}</option>`).join('');
+
+    const sync = () => {
+      hint.innerHTML = sel.value === 'tab'
+        ? 'כשייפתח חלון השיתוף: בחר <b>"כרטיסייה"</b> → את <b>הכרטיסייה הזאת</b> → ' +
+          'וסמן למטה <b>"שתף גם את האודיו של הכרטיסייה"</b>. בלי הסימון הזה לא ייקלט קול.'
+        : 'השיר ינוגן ברמקול והאפליקציה תקשיב לו. <b>הגבר את העוצמה</b>, החזק את ' +
+          'הטלפון קרוב, והימנע מרעש. פחות מדויק מקליטת כרטיסייה — ' +
+          'הקצב והסולם יוצאים טוב, האקורדים פחות.';
+    };
+    sel.addEventListener('change', sync);
+    sync();
+  }
+
   /* Records this tab's own audio while the song plays, then runs the same
      analyser the file path uses. The player is driven from the top so the
      recording starts where the song does — that keeps the detected beat grid
@@ -1151,10 +1186,11 @@ python scripts/build_sync_map.py work/analysis.json --chords work/chords.json --
     if (!status) return;
     out.innerHTML = '';
 
-    if (!AA.canCaptureTab()) {
+    const source = ($('#cap-source') && $('#cap-source').value) || 'tab';
+    const capture = source === 'mic' ? AA.captureMicAudio : AA.captureTabAudio;
+    if ((source === 'mic' && !AA.canCaptureMic()) || (source === 'tab' && !AA.canCaptureTab())) {
       out.innerHTML = `<div class="hand-readout" style="color:var(--bad)">
-        הדפדפן הזה לא תומך בהקלטת אודיו מכרטיסייה — זה קיים היום ב-Chrome וב-Edge במחשב.
-        בנייד או ב-Safari השתמש ב"ניתוח מונחה" או בקובץ אודיו.</div>`;
+        מקור הקליטה הזה לא זמין בדפדפן הזה. השתמש ב"ניתוח מונחה".</div>`;
       return;
     }
 
@@ -1184,11 +1220,16 @@ python scripts/build_sync_map.py work/analysis.json --chords work/chords.json --
         else { P.seek(0); P.play(); }
       }
 
-      status.textContent = 'ממתין לאישור שיתוף… (השיר כבר מתנגן)';
-      const buf = await AA.captureTabAudio({
+      status.textContent = source === 'mic'
+        ? 'ממתין לאישור מיקרופון… (השיר כבר מתנגן)'
+        : 'ממתין לאישור שיתוף… (השיר כבר מתנגן)';
+      const buf = await capture({
         seconds: secs,
         control: captureControl,
-        onStart: () => { offset = Math.max(0, P.time() || 0); },
+        // Only the app's own playback gives a trustworthy position; if the song
+        // is coming from somewhere else the recording starts at an unknown
+        // point and the manual nudge is the honest fallback.
+        onStart: () => { offset = P.playing ? Math.max(0, P.time() || 0) : 0; },
         onTick: (elapsed, limit) => {
           status.textContent = `מקליט… ${Math.floor(elapsed)} / ${Math.round(limit)} שניות`;
         }
@@ -1255,10 +1296,10 @@ python scripts/build_sync_map.py work/analysis.json --chords work/chords.json --
           של הכרטיסייה הזאת בזמן שהוא מתנגן, ותוציא ממנו
           <b>BPM, סולם, אקורדים ומבנה</b>. ההקלטה לא נשמרת ולא נשלחת לשום מקום.
         </div>
-        <div class="panel-desc" style="margin-bottom:16px">
-          כשייפתח חלון השיתוף: בחר <b>"כרטיסייה"</b> → את <b>הכרטיסייה הזאת</b> →
-          וחשוב מכל, סמן למטה <b>"שתף גם את האודיו של הכרטיסייה"</b>.
-          בלי הסימון הזה לא ייקלט קול.
+        <div class="field" style="max-width:340px">
+          <label>מאיפה לקלוט</label>
+          <select id="cap-source"></select>
+          <div class="hint" id="cap-source-hint"></div>
         </div>
         <div class="field" style="max-width:280px">
           <label>כמה להקליט</label>
@@ -1331,6 +1372,7 @@ python scripts/extract_chords.py work/audio.wav --beats work/analysis.json --out
        <button class="btn btn-ghost" data-action="close-modal">ביטול</button>`);
 
     autoAnalysis = null;
+    wireCaptureSource();
     const tapper = A.TapTempo();
     const back = $('.modal-back');
     back.addEventListener('click', e => {

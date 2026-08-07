@@ -448,6 +448,54 @@
     }
     stream.getVideoTracks().forEach(t => t.stop());   // we only ever wanted the sound
 
+    return recordTrack(audio, o,
+      'לא נקלט קול. ודא שהשיר באמת מתנגן ושסימנת לשתף את האודיו של הכרטיסייה.');
+  }
+
+  /* ---------- the microphone route ----------
+     Tab capture does not exist on iOS or on any phone browser, which
+     left mobile users with no way to analyse anything. The microphone
+     does exist there, so the song can be played out loud and listened
+     to instead.
+
+     It is a worse signal than tab audio — room noise, speaker
+     response and the phone's own processing all get in the way — so
+     we ask the browser to switch off the three things that would
+     actively fight us. Echo cancellation is the important one: it is
+     built to remove exactly the sound coming out of the speaker,
+     which here is the entire recording. */
+
+  function canCaptureMic() {
+    return !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia &&
+              typeof MediaRecorder !== 'undefined');
+  }
+
+  async function captureMicAudio(o) {
+    o = o || {};
+    if (!canCaptureMic()) {
+      throw new Error('הדפדפן הזה לא נותן גישה למיקרופון.');
+    }
+    let stream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
+      });
+    } catch (e) {
+      throw new Error(e && (e.name === 'NotAllowedError' || e.name === 'SecurityError')
+        ? 'אין הרשאה למיקרופון. אשר גישה בהגדרות האתר ונסה שוב.'
+        : 'לא הצלחתי לפתוח את המיקרופון.');
+    }
+    const audio = stream.getAudioTracks()[0];
+    if (!audio) {
+      stream.getTracks().forEach(t => t.stop());
+      throw new Error('לא נמצא מיקרופון זמין.');
+    }
+    return recordTrack(audio, o,
+      'לא נקלט קול. ודא שהשיר מתנגן ברמקול ושהעוצמה גבוהה מספיק.');
+  }
+
+  /** Shared recorder: runs an audio track for `seconds`, or until stopped. */
+  async function recordTrack(audio, o, silenceMessage) {
     const rec = new MediaRecorder(new MediaStream([audio]));
     const chunks = [];
     rec.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
@@ -480,14 +528,13 @@
     if (ticker) clearInterval(ticker);
 
     const blob = new Blob(chunks, { type: rec.mimeType || 'audio/webm' });
-    if (blob.size < 2048) {
-      throw new Error('לא נקלט קול. ודא שהשיר באמת מתנגן ושסימנת לשתף את האודיו של הכרטיסייה.');
-    }
+    if (blob.size < 2048) throw new Error(silenceMessage);
     return blob.arrayBuffer();
   }
 
   global.AudioAnalysis = {
     analyzeFile, fft, estimateTempo, estimateKey, decodeToMono,
-    canCaptureTab, captureTabAudio, shiftAnalysis
+    canCaptureTab, captureTabAudio, canCaptureMic, captureMicAudio,
+    shiftAnalysis
   };
 })(window);
