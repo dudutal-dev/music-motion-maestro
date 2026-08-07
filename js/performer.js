@@ -634,6 +634,28 @@
           stroke: skin, 'stroke-width': 13, 'stroke-linecap': 'round'
         }));
       }
+      /* The fingers this chord does not use still exist. Drawing only the ones
+         that press left Em with a two-fingered hand, which is the sort of thing
+         you stop being able to unsee. They curl in against the palm, clear of
+         the strings — the same posture the image prompts ask for. */
+      const usedNums = new Set((f.fingers || []).filter(n => n > 0));
+      const idle = [1, 2, 3, 4].filter(n => !usedNums.has(n) && !(f.barre && n === 1));
+      idle.forEach((n, k) => {
+        const along = dPalm + (n - 2.5) * 12 + 6;
+        const kn = neckPoint(along, -(hw + 11));
+        // Curled: short, and stopping well below the near edge of the neck.
+        const tip = neckPoint(along + 7, -(hw + 30 + (4 - n) * 2));
+        const mx = (kn.x + tip.x) / 2 - G.px * 12;
+        const my = (kn.y + tip.y) / 2 - G.py * 12;
+        const d = `M ${kn.x} ${kn.y} Q ${mx} ${my} ${tip.x} ${tip.y}`;
+        front.appendChild(el('path', {
+          d, fill: 'none', stroke: edge, 'stroke-width': 11, 'stroke-linecap': 'round', opacity: .3
+        }));
+        front.appendChild(el('path', {
+          d, fill: 'none', stroke: skin, 'stroke-width': 9.5, 'stroke-linecap': 'round'
+        }));
+      });
+
       const arch = pressed.filter(p => !(f.barre && p.fret === f.baseFret));
       arch.forEach((p, k) => {
         // Knuckles fan along the neck so the fingers are not a parallel comb.
