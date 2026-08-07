@@ -227,16 +227,41 @@
         : `<span class="pill">לא נותח</span>`}
       </div>
       <div class="row-tag">${esc(t.genre || '')}</div>
-      <button class="btn btn-sm btn-ghost" data-action="analyze" data-id="${t.id}">
-        ${a && a.bpm ? 'ערוך' : 'נתח'}</button>
+      <div class="row-acts">
+        <button class="btn btn-sm btn-ghost" data-action="analyze" data-id="${t.id}">
+          ${a && a.bpm ? 'ערוך' : 'נתח'}</button>
+        <button class="btn btn-icon btn-ghost" data-action="del-track" data-id="${t.id}"
+          title="הסר מהספרייה" aria-label="הסר מהספרייה">🗑</button>
+      </div>
     </div>`;
   }
 
   /* ---------------- stage ---------------- */
   /** Entering the stage with nothing selected is a dead end — pick the first
    *  analyzed track and cue it so there's always something to look at. */
+  /**
+   * Keeps the stage following the song that is actually loaded in the player.
+   *
+   * This used to return as soon as any track was selected, without checking
+   * what the player held. Analysing a track loads that video, so after
+   * analysing a second song the player sat on song B while the stage still
+   * followed song A — the character fretted one song's chords over another
+   * song's audio, in perfect sync with nothing.
+   */
   function ensureStageTrack() {
-    if (state.currentTrackId && Store.getTrack(state.currentTrackId)) return;
+    const cur = state.currentTrackId ? Store.getTrack(state.currentTrackId) : null;
+
+    if (P.videoId) {
+      const loaded = Store.state.tracks.find(t => t.videoId === P.videoId);
+      if (loaded && (!cur || cur.videoId !== P.videoId)) {
+        state.currentTrackId = loaded.id;
+        state.lastBeatIndex = -1;
+        lastReadoutChord = null;
+        return;
+      }
+    }
+    if (cur) return;
+
     const first = Store.state.tracks.find(t => t.analysis && t.analysis.bpm) || Store.state.tracks[0];
     if (!first) return;
     state.currentTrackId = first.id;
@@ -406,7 +431,9 @@
     const analyzed = t && t.analysis && t.analysis.bpm;
     return `<div class="page">
       <div class="stage-head">
-        ${pageHead('הבמה החיה', 'דמות שמנגנת את השיר — האקורדים, הידיים והתנועה נעולים למוזיקה')}
+        ${pageHead('הבמה החיה', t
+          ? `מנגן: ${esc(t.title)}${t.artist ? ' · ' + esc(t.artist) : ''}`
+          : 'דמות שמנגנת את השיר — האקורדים, הידיים והתנועה נעולים למוזיקה')}
         <button class="btn btn-sm" data-action="stage-focus" ${analyzed ? '' : 'disabled'}>⛶ מסך מלא</button>
       </div>
       <div class="stage-wrap">
@@ -421,6 +448,11 @@
                 : `<button class="btn btn-primary" data-route="library">לספרייה</button>`}
             </div>`}
             ${analyzed ? `<button class="stage-exit" data-action="stage-unfocus" aria-label="צא ממסך מלא">✕</button>` : ''}
+            ${analyzed ? `<div class="stage-chordcard" id="stage-chordcard">
+              <div class="scc-chord" id="scc-chord">—</div>
+              <div class="scc-diagram" id="scc-diagram"></div>
+              <div class="scc-hand" id="scc-hand"></div>
+            </div>` : ''}
             ${analyzed ? `<div class="stage-hud">
               <span class="hud-pill">BPM <b id="hud-bpm">${Math.round(t.analysis.bpm)}</b></span>
               <span class="hud-pill">אקורד <b id="hud-chord">—</b></span>
@@ -1144,6 +1176,7 @@ python scripts/build_sync_map.py work/analysis.json --chords work/chords.json --
     // These are markup, not performer output, so carry them across the rebuild.
     const hud = host.querySelector('.stage-hud');
     const exit = host.querySelector('.stage-exit');
+    const card = host.querySelector('.stage-chordcard');
     host.innerHTML = '';
 
     const heroMode = state.stageMode === 'hero' && state.stageChar && state.stageChar.portrait;
@@ -1177,6 +1210,7 @@ python scripts/build_sync_map.py work/analysis.json --chords work/chords.json --
     }
     if (hud) host.appendChild(hud);
     if (exit) host.appendChild(exit);
+    if (card) host.appendChild(card);
 
     const sel = $('#stage-char');
     if (sel) sel.addEventListener('change', () => {
@@ -1322,6 +1356,12 @@ python scripts/build_sync_map.py work/analysis.json --chords work/chords.json --
     if (hd) hd.innerHTML = diagram;
     if (hc) hc.textContent = chord;
     setHeroImage(chord);
+    // The same fingering on the stage itself, which is all that survives into
+    // focus mode — the side panel that used to carry it is out of the layout.
+    const sc = $('#scc-chord'), sd = $('#scc-diagram'), sh = $('#scc-hand');
+    if (sc) sc.textContent = chord;
+    if (sd) sd.innerHTML = diagram;
+    if (sh) sh.textContent = handText;
     document.querySelectorAll('.next-chord').forEach(n =>
       n.classList.toggle('current', n.dataset.c === chord));
   }
@@ -2097,6 +2137,22 @@ python scripts/extract_chords.py work/audio.wav --beats work/analysis.json --out
     if (a === 'new-character') return characterModal(null);
     if (a === 'edit-char') return characterModal(act.dataset.id);
     if (a === 'save-char') return saveCharacter(act.dataset.id);
+    if (a === 'del-track') {
+      const t = Store.getTrack(act.dataset.id);
+      if (!t) return;
+      if (!confirm(`להסיר את "${t.title}" מהספרייה? הניתוח שלו יימחק איתו.`)) return;
+      Store.removeTrack(t.id);
+      // If the stage was following it, hand over rather than leaving the
+      // performer bound to a track that no longer exists.
+      if (state.currentTrackId === t.id) {
+        state.currentTrackId = null;
+        state.loop = null;
+        lastReadoutChord = null;
+        if (P.playing) P.pause();
+      }
+      toast('השיר הוסר');
+      return render();
+    }
     if (a === 'del-char') {
       if (confirm('למחוק את הדמות?')) { Store.removeCharacter(act.dataset.id); closeModal(); render(); }
       return;

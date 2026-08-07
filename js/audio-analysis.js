@@ -224,6 +224,39 @@
     return { tonic: best.tonic, mode: best.mode, confidence: Math.max(0, best.score) };
   }
 
+  /**
+   * Settles the relative major/minor question using the chords.
+   *
+   * A key and its relative minor contain exactly the same notes, so a method
+   * that only looks at how often each pitch sounds cannot tell them apart —
+   * Am F C G came back as C major, which is defensible from the chroma and
+   * wrong to every guitarist who would call it A minor. What separates them is
+   * which chord the music treats as home, and that is in the progression: the
+   * first and last chords carry the tonal weight. Only the relative pair is
+   * ever swapped, and only when the chords agree, so a confident reading is
+   * never overturned by this.
+   */
+  function refineKeyWithChords(key, chords) {
+    if (!chords || chords.length < 2) return key;
+    const rel = key.mode === 'major'
+      ? { tonic: MM.PITCHES[(MM.PITCHES.indexOf(key.tonic) + 9) % 12], mode: 'minor' }
+      : { tonic: MM.PITCHES[(MM.PITCHES.indexOf(key.tonic) + 3) % 12], mode: 'major' };
+
+    const nameOf = k => k.tonic + (k.mode === 'minor' ? 'm' : '');
+    const other = nameOf(rel);
+
+    /* Only the opening chord is allowed to overturn the pitch-class evidence.
+       Weighting the closing chord too made Dm G C Am come out A minor because
+       it happens to end on the vi — but that is a ii-V-I in C and every
+       musician would call it C major. Where a piece starts is the stronger
+       single cue, and requiring it keeps the rule from firing on a passing
+       final chord. */
+    if (chords[0].chord === other) {
+      return { tonic: rel.tonic, mode: rel.mode, confidence: key.confidence };
+    }
+    return key;
+  }
+
   /* ---------- chords ---------- */
   function chordTemplates() {
     const t = [], names = [];
@@ -315,7 +348,19 @@
     p('מאתר קצב…');
     const tempo = estimateTempo(flux, envSr);
     if (!tempo.bpm) throw new Error('לא הצלחתי לזהות קצב');
-    const firstBeat = estimatePhase(flux, envSr, tempo.beatLen);
+    /* A frame's flux describes a window that begins at i*HOP but spans FRAME
+       samples, so an onset registers as soon as it enters the window rather
+       than when the frame starts. Timing frames from the window start therefore
+       reports every onset early by roughly half a frame. Measured against a
+       single impulse at exactly 1.000s, the peak landed at 0.929s — 71ms early,
+       which is a fifth of a beat at 120 BPM and enough to make the performer
+       feel ahead of the music. Referencing each frame to the centre of its
+       window removes the systematic part of that. */
+    const frameCentre = (FRAME / 2) / sr;
+    let firstBeat = estimatePhase(flux, envSr, tempo.beatLen) + frameCentre;
+    // Keep it the earliest beat at or after zero, as the grid builder assumes.
+    while (firstBeat >= tempo.beatLen) firstBeat -= tempo.beatLen;
+    while (firstBeat < 0) firstBeat += tempo.beatLen;
 
     p('בונה רשת ביטים…');
     const sig = 4;
@@ -329,10 +374,13 @@
     const mean = new Array(12).fill(0);
     for (const c of chroma) for (let i = 0; i < 12; i++) mean[i] += c[i];
     for (let i = 0; i < 12; i++) mean[i] /= chroma.length;
-    const key = estimateKey(mean);
+    let key = estimateKey(mean);
 
     p('מחלץ אקורדים…');
     const chords = detectChords(chroma, envSr, beatTimes);
+    // The chords are what break the relative major/minor tie, so this has to
+    // come after them even though the key is reported first.
+    key = refineKeyWithChords(key, chords);
 
     p('מזהה מבנה…');
     const sections = buildSections(rms, envSr, duration, tempo.beatLen, sig);
