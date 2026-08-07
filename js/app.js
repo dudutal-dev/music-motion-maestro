@@ -76,6 +76,7 @@
      ============================================================ */
   const icons = {
     home: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 10.5 12 3l9 7.5V21H3z"/></svg>',
+    guide: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H19v15H6.5A2.5 2.5 0 0 0 4 20.5z"/><path d="M9 8h6M9 12h4"/></svg>',
     lib: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h4v16H4zM11 4h3v16h-3zM17.5 5l3 15"/></svg>',
     stage: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="7" r="3"/><path d="M5 21v-2a5 5 0 0 1 5-5h4a5 5 0 0 1 5 5v2"/></svg>',
     chars: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="8" r="3.2"/><path d="M2.5 20v-1.6A4.9 4.9 0 0 1 7.4 13.5h3.2a4.9 4.9 0 0 1 4.9 4.9V20"/><path d="M16 5.2a3.2 3.2 0 0 1 0 6.1M18.5 13.9a4.9 4.9 0 0 1 3 4.5V20"/></svg>',
@@ -94,6 +95,7 @@
   function renderSidebar() {
     const nav = [
       ['home', 'ראשי', icons.home],
+      ['guide', 'מדריך עבודה', icons.guide],
       ['library', 'הספרייה שלי', icons.lib],
       ['stage', 'במה חיה', icons.stage],
       ['chart', 'תרשים אקורדים', icons.chart],
@@ -266,6 +268,135 @@
       }
     } catch (e) { /* layout mode stands on its own */ }
     render();
+  }
+
+  /* ---------------- working guide ----------------
+     A manual that reads the user's own data. A generic "how to use this"
+     page makes you work out where you are in it; this one already knows,
+     marks each step done or not, says what is missing, and links straight
+     to the screen that fixes it. */
+  function viewGuide() {
+    const tracks = Store.state.tracks;
+    const chars = Store.state.characters;
+    const analysed = tracks.filter(t => t.analysis && t.analysis.bpm);
+    const withArt = chars.filter(c => c.portrait);
+    const posterN = Object.keys(posterImages).length;
+    const firstUnanalysed = tracks.find(t => !(t.analysis && t.analysis.bpm));
+    const stageReady = analysed.length && chars.length;
+
+    /** One step: a state, a reason, and the button that resolves it. */
+    const step = (n, title, done, body, action) => `
+      <div class="guide-step ${done ? 'done' : ''}">
+        <div class="guide-num">${done ? '✓' : n}</div>
+        <div class="guide-body">
+          <h3>${title}</h3>
+          ${body}
+          ${action || ''}
+        </div>
+      </div>`;
+    const go = (route, label) => `<button class="btn btn-sm" data-route="${route}">${label}</button>`;
+
+    return `<div class="page">
+      ${pageHead('מדריך עבודה', 'הדרך מקישור יוטיוב עד דמות שמנגנת את השיר')}
+
+      <div class="panel" style="margin-bottom:22px">
+        <div class="panel-title">איך האפליקציה בנויה</div>
+        <div class="panel-desc">
+          שני דברים נפרדים מרכיבים את מה שאתה רואה על הבמה, וכדאי להכיר את ההבדל:
+          <br><br>
+          <b>הדיוק מחושב.</b> האקורדים, מיקום האצבעות, הדיאגרמות ורשת הביטים —
+          האפליקציה מחשבת אותם בעצמה ומאמתת מול תורת המוזיקה. לכן הם נכונים תמיד.
+          <br><br>
+          <b>המראה מיוצר.</b> הדמות הריאליסטית מגיעה מתמונות שאתה מייצר בכלי חיצוני.
+          מודלי תמונות לא מדייקים באצבוע — ולכן הדיוק אף פעם לא נשען עליהן.
+          התמונות נותנות את המראה, החישוב נותן את הנכונות.
+        </div>
+      </div>
+
+      ${step(1, 'הוסף שיר', tracks.length > 0, `
+        <p>הדבק קישור יוטיוב — <b>שם השיר, האמן והעטיפה מתמלאים לבד</b>.</p>
+        <div class="guide-state">${tracks.length
+          ? `יש ${tracks.length} שירים בספרייה.`
+          : 'עדיין אין שירים.'}</div>`,
+        `<button class="btn btn-sm" data-action="add-track">+ הוסף שיר</button>`)}
+
+      ${step(2, 'נתח את השיר', analysed.length > 0, `
+        <p><b>זה השער.</b> בלי BPM ואקורדים הבמה תישאר ריקה — אין למה לסנכרן.</p>
+        <p>ארבעה מסלולים, לפי מה שיש לך:</p>
+        <ul class="guide-list">
+          <li><b>🔴 הקלט מהשיר · הכרטיסייה</b> — הכי מדויק. השיר מתנגן והאפליקציה
+            מקליטה את הקול של הכרטיסייה. <b>Chrome/Edge במחשב בלבד.</b>
+            חובה לסמן "שתף גם את האודיו של הכרטיסייה" — זה הכשל הנפוץ ביותר.</li>
+          <li><b>🎤 הקלט מהשיר · מיקרופון</b> — <b>עובד גם באייפון</b>. השיר מתנגן
+            ברמקול והאפליקציה מקשיבה. קצב וסולם יוצאים טוב, אקורדים פחות.</li>
+          <li><b>🎧 קובץ אודיו</b> — אם יש לך mp3.</li>
+          <li><b>ניתוח מונחה</b> — הקשת קצב + פרוגרסיה ידנית. עובד בכל מקום.</li>
+        </ul>
+        <div class="guide-state">${analysed.length
+          ? `${analysed.length} מתוך ${tracks.length} שירים מנותחים.`
+          : 'אף שיר לא נותח עדיין.'}</div>`,
+        firstUnanalysed
+          ? `<button class="btn btn-sm" data-action="analyze" data-id="${firstUnanalysed.id}">נתח את "${esc(firstUnanalysed.title)}"</button>`
+          : go('library', 'לספרייה'))}
+
+      ${step(3, 'צור דמות', chars.length > 0, `
+        <p>נועלים דמות פעם אחת והיא משמשת לכל שיר.</p>
+        <p><b>צרף לה תמונה</b> — זה מה שפותח את התצוגה הריאליסטית בבמה.
+        בלי תמונה תקבל רק את האנימציה.</p>
+        <div class="guide-state">${chars.length
+          ? `${chars.length} דמויות · ${withArt.length} עם תמונה מצורפת.`
+          : 'עדיין אין דמויות.'}</div>`,
+        `<button class="btn btn-sm" data-action="new-character">+ דמות חדשה</button> ${chars.length ? go('characters', 'לדמויות') : ''}`)}
+
+      ${step(4, 'הפק פרומפטים לאקורדים', posterN > 0, `
+        <p>מ<b>הרכבת פוסטר</b> → <b>קבל פרומפטים לאקורדים שנבחרו</b>. מקבלים פרומפט
+        לכל אקורד, עם אותה דמות נעולה בכל אחד — רק היד משתנה.</p>
+        <p><b>לתמונות שיגיעו לבמה:</b> בחר לדמות רקע <b>"רקע שחור נקי"</b>.
+        הבמה ממזגת שחור אל תוך הרקע שלה בלי לחתוך כלום — התוצאה הכי נקייה.</p>
+        <div class="guide-state">${posterN
+          ? `${posterN} תמונות אקורד שמורות.`
+          : 'עדיין לא שובצו תמונות.'}</div>`,
+        go('poster', 'להרכבת פוסטר'))}
+
+      ${step(5, 'הרכב את הפוסטר', posterN >= 4, `
+        <p>גוררים את התמונות לתאים. שם האקורד והדיאגרמה <b>נצרבים על כל תא</b> —
+        שם חי הדיוק, לא בתמונה.</p>
+        <p><b>וזה גם מאגר הפריימים של הבמה:</b> ככל שהפוסטר מלא יותר, כך הדמות
+        מתחלפת נכון ליותר אקורדים. לשיר טיפוסי מספיקות 4 תמונות.</p>
+        <p>אם הרקע לא שחור — <b>"הסר רקע מכולן"</b> חותך אותו. יש ביטול.</p>
+        <div class="guide-state">${posterN >= 4
+          ? `${posterN} תמונות — מספיק לשיר שלם.`
+          : `${posterN} תמונות. מומלץ לפחות 4.`}</div>`,
+        go('poster', 'לפוסטר'))}
+
+      ${step(6, 'הבמה החיה', !!stageReady, `
+        <p>בוחרים דמות, כלי, ולוחצים נגן.</p>
+        <ul class="guide-list">
+          <li><b>⛶ מסך מלא</b> — רק ההופעה והאקורד. יוצאים ב-Esc.</li>
+          <li><b>🖼️ דמות ריאליסטית</b> — נפתח רק אם צירפת תמונה לדמות.</li>
+          <li><b>שילוב בתמונה</b> — למי שהתמונות שלו על רקע שחור.</li>
+          <li><b>רקע הבמה</b> — הסצנה שנשארת קבועה בזמן שהנגן מתחלף.</li>
+        </ul>
+        <p><b>איך יודעים שזה עובד:</b> ב-F האצבע המורה נשכבת לרוחב (ברה);
+        הזרוע נעה אחרת בין אקורד לאקורד; ההחלפה נופלת בדיוק על ההחלפה ב-HUD.
+        מקדים או מאחר? ניתוח → <b>היסט לביט הראשון</b>.</p>
+        <div class="guide-state">${stageReady
+          ? 'מוכן — יש שיר מנותח ודמות.'
+          : `חסר: ${[!analysed.length && 'שיר מנותח', !chars.length && 'דמות'].filter(Boolean).join(' ו')}.`}</div>`,
+        go('stage', 'לבמה החיה'))}
+
+      ${step(7, 'לנגן וללמוד', false, `
+        <p><b>תרשים אקורדים</b> — השיר נפרס לתיבות, התיבה הנוכחית נדלקת בזמן אמת,
+        ולחיצה על סקשן מריצה אותו בלולאה. יש טרנספוזיציה וקאפו.</p>
+        <p><b>שיעורים</b> — 8 שיעורים עם מטרונום, נגינת האקורד והקראה בעברית.</p>`,
+        `${go('chart', 'לתרשים')} ${go('lessons', 'לשיעורים')}`)}
+
+      ${step(8, 'גבה', false, `
+        <p>הכול נשמר <b>בדפדפן הזה בלבד</b>. הגיבוי הוא הדבר היחיד שעובר בין מכשירים —
+        והוא כולל גם את תמונות הפוסטר, ולכן הקובץ כבד.</p>
+        <p>סדר מומלץ: לשבץ תמונות → לרענן פעם אחת כדי לוודא שהן חזרו → ואז לייצא.</p>`,
+        go('settings', 'להגדרות'))}
+    </div>`;
   }
 
   function viewStage() {
@@ -661,8 +792,8 @@
     if (postersLoaded) return Promise.resolve();
     postersLoaded = true;
     const redraw = () => {
-      // The stage draws from these too, so it needs the same nudge.
-      if (state.route === 'poster' || state.route === 'stage') render();
+      // The stage and the guide read these too, so they need the same nudge.
+      if (['poster', 'stage', 'guide'].includes(state.route)) render();
     };
     return MM.Posters.all().then(map => {
       Object.assign(posterImages, map);
@@ -975,7 +1106,8 @@ python scripts/build_sync_map.py work/analysis.json --chords work/chords.json --
   function render() {
     renderSidebar();
     if (state.route === 'stage' || state.route === 'chart') ensureStageTrack();
-    if (state.route === 'poster' || state.route === 'stage') loadPosters();
+    // The guide reports how many chord images exist, so it needs them loaded.
+    if (['poster', 'stage', 'guide'].includes(state.route)) loadPosters();
     if (state.route === 'settings') {
       loadPosters().then(() => {
         const el = $('#backup-posters');
@@ -983,7 +1115,7 @@ python scripts/build_sync_map.py work/analysis.json --chords work/chords.json --
       });
     }
     const views = {
-      home: viewHome, library: viewLibrary, stage: viewStage,
+      home: viewHome, guide: viewGuide, library: viewLibrary, stage: viewStage,
       chart: viewChart, characters: viewCharacters, chords: viewChords, poster: viewPoster,
       lessons: viewLessons, settings: viewSettings
     };
