@@ -57,7 +57,12 @@ a { color: inherit; text-decoration: none; }
   display: grid;
   grid-template-columns: 1fr var(--sidebar);
   grid-template-rows: 1fr var(--player-h);
+  /* dvh tracks the browser chrome as it slides away; without it the player bar
+     sits under Safari's toolbar on iOS. vh stays as the fallback. */
   height: 100vh;
+  height: 100dvh;
+  max-width: 100%;
+  overflow-x: clip;
 }
 
 /* ---------- sidebar ---------- */
@@ -102,6 +107,11 @@ a { color: inherit; text-decoration: none; }
 /* ---------- main ---------- */
 .main {
   grid-column: 1; grid-row: 1;
+  /* Grid items default to min-width:auto, so this column refused to shrink
+     below the intrinsic width of its widest content — the search input and the
+     track rows. That pushed the whole shell wider than the phone's viewport and
+     scrolled the headings off the edge. */
+  min-width: 0;
   overflow-y: auto; position: relative;
   background:
     radial-gradient(900px 420px at 85% -8%, rgba(0,229,208,.07), transparent 62%),
@@ -110,19 +120,21 @@ a { color: inherit; text-decoration: none; }
 }
 .topbar {
   position: sticky; top: 0; z-index: 30;
-  display: flex; align-items: center; gap: 14px;
+  display: flex; align-items: center; gap: 14px; min-width: 0;
   padding: 16px 36px; backdrop-filter: blur(18px);
   background: linear-gradient(to bottom, rgba(0,0,0,.92), rgba(0,0,0,.55));
   border-bottom: 1px solid transparent;
 }
 .topbar.scrolled { border-bottom-color: var(--line); }
 .search {
-  flex: 1; max-width: 420px; display: flex; align-items: center; gap: 9px;
+  flex: 1; min-width: 0; max-width: 420px; display: flex; align-items: center; gap: 9px;
   background: var(--panel); border: 1px solid var(--line); border-radius: 999px;
   padding: 9px 16px; transition: border-color .16s;
 }
 .search:focus-within { border-color: var(--line-2); }
-.search input { flex: 1; background: none; border: 0; outline: none; }
+/* An input carries a default intrinsic width of about 20 characters; without
+   this it sets the floor for the whole shell on a narrow screen. */
+.search input { flex: 1; min-width: 0; width: 100%; background: none; border: 0; outline: none; }
 .search input::placeholder { color: var(--text-3); }
 .search svg { width: 16px; height: 16px; color: var(--text-3); }
 
@@ -252,6 +264,16 @@ a { color: inherit; text-decoration: none; }
 .np-text { min-width: 0; }
 .np-title { font-weight: 600; font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .np-artist { font-size: 11.5px; color: var(--text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* Song names come in both scripts, and the page is RTL. Truncating a Latin
+   title under an RTL paragraph puts the ellipsis at the wrong end, so
+   "Another Brick in the Wall, Pt. 2" clipped down to "...ck in the Wall, Pt. 2"
+   — the part that identifies the song is what got cut. `plaintext` lets each
+   title pick its own direction from its first strong character, so Hebrew and
+   Latin names each truncate at their own end. */
+.card-title, .card-meta,
+.row-title, .row-artist,
+.np-title, .np-artist { unicode-bidi: plaintext; }
 
 .transport { display: flex; flex-direction: column; align-items: center; gap: 7px; }
 .transport-btns { display: flex; align-items: center; gap: 16px; }
@@ -526,4 +548,52 @@ a { color: inherit; text-decoration: none; }
   .page, .topbar { padding-inline: 20px; }
   .player { grid-template-columns: 1fr auto; }
   .player-right { display: none; }
+}
+
+/* ---------- phones ----------
+   The desktop layout assumes room the phone does not have: a six-column
+   track row wider than the screen, a 34px page title, and side-by-side
+   panels. Everything here collapses to a single readable column. */
+@media (max-width: 640px) {
+  .page, .topbar { padding-inline: 14px; }
+  .page { padding-bottom: 32px; }
+  .topbar { gap: 9px; padding-block: 12px; }
+  .page-title { font-size: 25px; }
+  .page-sub { font-size: 13px; }
+  .page-head { margin: 12px 0 20px; }
+  .section-head { margin: 26px 0 12px; }
+
+  /* Index, genre and analysis columns are the first things to go; the title
+     and artwork are what identify a track. */
+  .row { grid-template-columns: 46px 1fr auto; gap: 11px; padding: 8px 6px; }
+  .row-idx, .row-tag { display: none; }
+  .row-analysis { justify-content: flex-end; }
+
+  .grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
+  .form-grid { grid-template-columns: 1fr; }
+  .diagram-box { gap: 16px; }
+  .lesson-grid { grid-template-columns: 1fr; }
+
+  /* Four tabs do not fit; let them scroll rather than wrap into a stack. */
+  .tabs { overflow-x: auto; flex-wrap: nowrap; scrollbar-width: none; }
+  .tabs::-webkit-scrollbar { display: none; }
+  .tab { padding: 10px 12px; font-size: 12.5px; white-space: nowrap; }
+
+  .modal-back { padding: 12px; align-items: end; }
+  .modal { max-height: 92vh; max-height: 92dvh; }
+  .modal-body, .modal-head, .modal-foot { padding-inline: 16px; }
+  .modal-foot { flex-wrap: wrap; }
+
+  .chart-grid { grid-template-columns: repeat(3, 1fr); }
+  .chips { flex-wrap: wrap; }
+
+  /* Wide content scrolls inside itself instead of stretching the page. */
+  .fretboard-svg, .keyboard-svg { max-width: 100%; height: auto; }
+  .code { overflow-x: auto; }
+}
+
+/* Notch and home-indicator clearance, so nothing sits under the system UI. */
+@supports (padding: env(safe-area-inset-bottom)) {
+  .player { padding-bottom: env(safe-area-inset-bottom); }
+  .sidebar { padding-bottom: calc(16px + env(safe-area-inset-bottom)); }
 }
