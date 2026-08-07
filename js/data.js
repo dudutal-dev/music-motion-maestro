@@ -439,12 +439,42 @@
   const KEY = 'maestro.studio.v1';
   const defaults = () => ({ tracks: [], characters: [], settings: { volume: 80, lang: 'he', voiceRate: .95 } });
 
+  /* Declared before normalize(), which runs during module init when stored
+     data is read back: a const here would still be in its dead zone. */
+  const uid = () => 'x' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
+
+  /**
+   * Forces a parsed blob into the shape the app relies on.
+   *
+   * Object.assign happily lets `{"tracks": "hello"}` through, and from then on
+   * every view that maps over the library is calling .map on a string. The
+   * data comes from a file the user picked or from storage another version
+   * wrote, so neither source is trustworthy enough to spread blindly. Anything
+   * of the wrong type falls back to the default rather than being repaired
+   * into something that was never there.
+   */
+  function normalize(parsed) {
+    const s = defaults();
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return s;
+    if (Array.isArray(parsed.tracks)) {
+      s.tracks = parsed.tracks.filter(t => t && typeof t === 'object' && t.videoId)
+        .map(t => (t.id ? t : Object.assign({ id: uid() }, t)));
+    }
+    if (Array.isArray(parsed.characters)) {
+      s.characters = parsed.characters.filter(c => c && typeof c === 'object')
+        .map(c => (c.id ? c : Object.assign({ id: uid() }, c)));
+    }
+    if (parsed.settings && typeof parsed.settings === 'object' && !Array.isArray(parsed.settings)) {
+      Object.assign(s.settings, parsed.settings);
+    }
+    return s;
+  }
+
   function load() {
     try {
       const raw = localStorage.getItem(KEY);
       if (!raw) return defaults();
-      const parsed = JSON.parse(raw);
-      return Object.assign(defaults(), parsed);
+      return normalize(JSON.parse(raw));
     } catch (e) { return defaults(); }
   }
   let state = load();
@@ -454,7 +484,6 @@
     try { localStorage.setItem(KEY, JSON.stringify(state)); return true; }
     catch (e) { console.warn('save failed', e); return false; }
   }
-  const uid = () => 'x' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
 
   const Store = {
     get state() { return state; },
@@ -488,9 +517,8 @@
     },
     async importAll(json) {
       const parsed = JSON.parse(json);
-      const posters = parsed.posters || {};
-      delete parsed.posters;                 // never let it into localStorage
-      state = Object.assign(defaults(), parsed);
+      const posters = (parsed && parsed.posters) || {};
+      state = normalize(parsed);             // posters never enter localStorage
       save();
       let restored = 0;
       try { restored = await Posters.replaceAll(posters); } catch (e) { restored = 0; }
