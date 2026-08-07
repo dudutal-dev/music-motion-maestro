@@ -37,6 +37,55 @@
   const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
   const lerp = (a, b, t) => a + (b - a) * t;
 
+  /**
+   * A human head, shared by both scenes.
+   *
+   * Jaw narrowing to a chin rather than an ellipse; hair with a hairline
+   * instead of a cap; brows, ears and a nose. The features are low-contrast
+   * and sit on the classical thirds, so the face reads as a face rather than
+   * as a smiley drawn on a circle.
+   */
+  function buildHead(el, cx, cy, r) {
+    const g = el('g', { class: 'mm-head' });
+    g.appendChild(el('path', {
+      d: `M ${cx - r * .86} ${cy - r * .18}
+          C ${cx - r * .92} ${cy - r * .95}, ${cx + r * .92} ${cy - r * .95}, ${cx + r * .86} ${cy - r * .18}
+          C ${cx + r * .84} ${cy + r * .42}, ${cx + r * .44} ${cy + r * .96}, ${cx} ${cy + r * .99}
+          C ${cx - r * .44} ${cy + r * .96}, ${cx - r * .84} ${cy + r * .42}, ${cx - r * .86} ${cy - r * .18} Z`,
+      fill: 'url(#mm-skin)'
+    }));
+    g.appendChild(el('ellipse', { cx: cx - r * .88, cy: cy + r * .10, rx: r * .13, ry: r * .23, fill: '#dda87e' }));
+    g.appendChild(el('ellipse', { cx: cx + r * .88, cy: cy + r * .10, rx: r * .13, ry: r * .23, fill: '#dda87e' }));
+    g.appendChild(el('path', {
+      d: `M ${cx - r * .90} ${cy + r * .06}
+          C ${cx - r * 1.02} ${cy - r * 1.10}, ${cx + r * 1.02} ${cy - r * 1.10}, ${cx + r * .90} ${cy + r * .06}
+          C ${cx + r * .86} ${cy - r * .30}, ${cx + r * .60} ${cy - r * .52}, ${cx + r * .10} ${cy - r * .46}
+          C ${cx - r * .40} ${cy - r * .40}, ${cx - r * .78} ${cy - r * .30}, ${cx - r * .90} ${cy + r * .06} Z`,
+      fill: '#2a1d15'
+    }));
+    const eyeY = cy + r * .06, ex = r * .34, bw = r * .22;
+    g.appendChild(el('path', {
+      d: `M ${cx - ex - bw} ${eyeY - r * .30} q ${bw} ${-r * .10} ${bw * 2} ${-r * .03}`,
+      stroke: '#3b2a1e', 'stroke-width': r * .075, fill: 'none', 'stroke-linecap': 'round'
+    }));
+    g.appendChild(el('path', {
+      d: `M ${cx + ex - bw} ${eyeY - r * .33} q ${bw} ${-r * .08} ${bw * 2} ${r * .03}`,
+      stroke: '#3b2a1e', 'stroke-width': r * .075, fill: 'none', 'stroke-linecap': 'round'
+    }));
+    g.appendChild(el('ellipse', { cx: cx - ex, cy: eyeY, rx: r * .105, ry: r * .08, fill: '#2b211a' }));
+    g.appendChild(el('ellipse', { cx: cx + ex, cy: eyeY, rx: r * .105, ry: r * .08, fill: '#2b211a' }));
+    g.appendChild(el('path', {
+      d: `M ${cx - r * .05} ${cy + r * .30} q ${r * .10} ${r * .15} ${-r * .03} ${r * .22}`,
+      stroke: '#c08f66', 'stroke-width': r * .06, fill: 'none', 'stroke-linecap': 'round'
+    }));
+    const mouth = el('path', {
+      d: `M ${cx - r * .20} ${cy + r * .62} q ${r * .20} ${r * .10} ${r * .40} 0`,
+      stroke: '#a8705a', 'stroke-width': r * .065, fill: 'none', 'stroke-linecap': 'round'
+    });
+    g.appendChild(mouth);
+    return { g, mouth };
+  }
+
   /** Two-bone IK: returns elbow point so that hand reaches target. */
   function solveIK(sx, sy, tx, ty, l1, l2, bend) {
     let dx = tx - sx, dy = ty - sy;
@@ -61,9 +110,11 @@
   const G = {
     nut:  { x: 762, y: 228 },      // neck points up-right, body over the lap
     heel: { x: 400, y: 372 },
-    head: { x: 400, y: 140, r: 52 },
-    shFret:  { x: 478, y: 262 },   // fretting-arm shoulder (viewer right)
-    shStrum: { x: 322, y: 262 },   // strumming-arm shoulder (viewer left)
+    // A head about one seventh of the standing figure, rather than the third
+    // that reads as a cartoon. Shoulders sit wider than the head, not on it.
+    head: { x: 400, y: 156, r: 40 },
+    shFret:  { x: 492, y: 250 },   // fretting-arm shoulder (viewer right)
+    shStrum: { x: 308, y: 250 },   // strumming-arm shoulder (viewer left)
     hip:  { x: 400, y: 486 },
     upper: 146, fore: 139,
     frets: 14
@@ -180,12 +231,44 @@
       return d;
     }
 
+    /**
+     * An arm that tapers.
+     *
+     * Two round-capped lines of constant width read as plumbing, not as a
+     * limb. A real arm is widest at the deltoid, narrows through the elbow and
+     * narrows again to the wrist, so each segment is a quad whose two ends
+     * have different widths, with a joint disc at the elbow to keep the bend
+     * from showing a corner.
+     */
     function limb(cls, w, color) {
       const g = el('g', { class: cls });
-      const a = el('line', { 'stroke-width': w, stroke: color, 'stroke-linecap': 'round' });
-      const b = el('line', { 'stroke-width': w * 0.85, stroke: color, 'stroke-linecap': 'round' });
-      g.appendChild(a); g.appendChild(b);
-      return { g, a, b };
+      const upper = el('path', { fill: color });
+      const joint = el('circle', { r: w * 0.40, fill: color });
+      const fore = el('path', { fill: color });
+      const shoulder = el('circle', { r: w * 0.52, fill: color });
+      g.appendChild(shoulder); g.appendChild(upper);
+      g.appendChild(joint); g.appendChild(fore);
+
+      /** Quad from (x1,y1) width w1 to (x2,y2) width w2. */
+      const taper = (x1, y1, x2, y2, w1, w2) => {
+        const dx = x2 - x1, dy = y2 - y1;
+        const len = Math.hypot(dx, dy) || 1;
+        const nx = -dy / len, ny = dx / len;
+        const a1 = w1 / 2, a2 = w2 / 2;
+        return `M ${x1 + nx * a1} ${y1 + ny * a1} L ${x2 + nx * a2} ${y2 + ny * a2} ` +
+               `L ${x2 - nx * a2} ${y2 - ny * a2} L ${x1 - nx * a1} ${y1 - ny * a1} Z`;
+      };
+
+      return {
+        g,
+        /** sh -> elbow -> hand, tapering along the way */
+        set(sx, sy, ex, ey, hx, hy) {
+          upper.setAttribute('d', taper(sx, sy, ex, ey, w * 1.02, w * 0.80));
+          fore.setAttribute('d', taper(ex, ey, hx, hy, w * 0.80, w * 0.56));
+          joint.setAttribute('cx', ex); joint.setAttribute('cy', ey);
+          shoulder.setAttribute('cx', sx); shoulder.setAttribute('cy', sy);
+        }
+      };
     }
 
     /* ---------- guitar build ---------- */
@@ -199,33 +282,47 @@
       /* body group (sways) */
       const body = el('g', { id: 'mm-bodyg' });
       refs.body = body;
-      // torso: shoulders -> waist -> hips, with rounded shoulder caps
-      const sl = G.shStrum, sr = G.shFret, hp = G.hip;
-      // neck first so the torso overlaps its base — no floating head
-      body.appendChild(el('rect', {
-        x: G.head.x - 18, y: G.head.y + 30, width: 36, height: 62, rx: 15, fill: 'url(#mm-skin)'
-      }));
+      const sl = G.shStrum, sr = G.shFret, hp = G.hip, hd = G.head;
+
+      /* Seated: thighs run forward from the hips, which is what the guitar
+         actually rests on. Without a lap the instrument floats. */
       body.appendChild(el('path', {
-        d: `M ${sl.x - 4} ${sl.y - 26}
-            C ${sl.x - 40} ${sl.y - 18}, ${sl.x - 46} ${sl.y + 60}, ${hp.x - 72} ${hp.y - 6}
-            L ${hp.x - 64} ${hp.y + 30} L ${hp.x + 64} ${hp.y + 30} L ${hp.x + 72} ${hp.y - 6}
-            C ${sr.x + 46} ${sr.y + 60}, ${sr.x + 40} ${sr.y - 18}, ${sr.x + 4} ${sr.y - 26}
-            Q ${G.head.x} ${sl.y - 44}, ${sl.x - 4} ${sl.y - 26} Z`,
-        fill: 'url(#mm-cloth)', stroke: 'rgba(255,255,255,.1)', 'stroke-width': 1.5
+        d: `M ${hp.x - 74} ${hp.y - 4} Q ${hp.x - 96} ${hp.y + 54}, ${hp.x - 86} ${hp.y + 76}
+            L ${hp.x + 92} ${hp.y + 76} Q ${hp.x + 104} ${hp.y + 40}, ${hp.x + 78} ${hp.y - 4} Z`,
+        fill: 'url(#mm-cloth)', opacity: .85
       }));
-      body.appendChild(el('circle', { cx: sl.x, cy: sl.y - 8, r: 30, fill: 'url(#mm-cloth)' }));
-      body.appendChild(el('circle', { cx: sr.x, cy: sr.y - 8, r: 30, fill: 'url(#mm-cloth)' }));
-      const head = el('g', { id: 'mm-head' });
-      head.appendChild(el('ellipse', { cx: G.head.x, cy: G.head.y, rx: G.head.r * .82, ry: G.head.r, fill: 'url(#mm-skin)' }));
-      head.appendChild(el('path', {
-        d: `M ${G.head.x - 41} ${G.head.y - 8} C ${G.head.x - 46} ${G.head.y - 58}, ${G.head.x + 46} ${G.head.y - 60}, ${G.head.x + 40} ${G.head.y - 6}
-            C ${G.head.x + 30} ${G.head.y - 34}, ${G.head.x - 28} ${G.head.y - 36}, ${G.head.x - 41} ${G.head.y - 8} Z`,
-        fill: '#241a14'
+
+      // Neck, drawn before the torso so the collar overlaps its base.
+      body.appendChild(el('path', {
+        d: `M ${hd.x - 15} ${hd.y + 22} L ${hd.x - 17} ${hd.y + 62}
+            L ${hd.x + 17} ${hd.y + 62} L ${hd.x + 15} ${hd.y + 22} Z`,
+        fill: '#d3a077'
       }));
-      head.appendChild(el('circle', { cx: G.head.x - 15, cy: G.head.y + 2, r: 3.4, fill: '#1a1410' }));
-      head.appendChild(el('circle', { cx: G.head.x + 15, cy: G.head.y + 2, r: 3.4, fill: '#1a1410' }));
-      refs.mouth = el('path', { d: `M ${G.head.x - 9} ${G.head.y + 22} q 9 6 18 0`, stroke: '#1a1410', 'stroke-width': 2.4, fill: 'none', 'stroke-linecap': 'round' });
-      head.appendChild(refs.mouth);
+
+      /* Torso: a shoulder line that slopes down and out from the neck, a
+         waist that comes in, and hips that go back out. The old shape ran
+         straight from shoulder to hip, which is what made it a block. */
+      body.appendChild(el('path', {
+        d: `M ${hd.x - 20} ${sl.y - 38}
+            C ${sl.x - 6} ${sl.y - 34}, ${sl.x - 24} ${sl.y - 22}, ${sl.x - 30} ${sl.y + 4}
+            C ${sl.x - 30} ${sl.y + 46}, ${hp.x - 62} ${hp.y - 74}, ${hp.x - 56} ${hp.y - 22}
+            L ${hp.x - 62} ${hp.y + 20} L ${hp.x + 66} ${hp.y + 20} L ${hp.x + 60} ${hp.y - 22}
+            C ${hp.x + 66} ${hp.y - 74}, ${sr.x + 30} ${sr.y + 46}, ${sr.x + 30} ${sr.y + 4}
+            C ${sr.x + 24} ${sr.y - 22}, ${sr.x + 6} ${sr.y - 34}, ${hd.x + 20} ${sl.y - 38} Z`,
+        fill: 'url(#mm-cloth)'
+      }));
+      // Collar, which is what tells you there is a garment and not a shape.
+      body.appendChild(el('path', {
+        d: `M ${hd.x - 21} ${sl.y - 39} Q ${hd.x} ${sl.y - 20}, ${hd.x + 21} ${sl.y - 39}`,
+        fill: 'none', stroke: 'rgba(0,0,0,.30)', 'stroke-width': 3.5, 'stroke-linecap': 'round'
+      }));
+      // Deltoids: rounded, and set slightly below the shoulder line.
+      body.appendChild(el('ellipse', { cx: sl.x - 6, cy: sl.y + 2, rx: 26, ry: 24, fill: 'url(#mm-cloth)' }));
+      body.appendChild(el('ellipse', { cx: sr.x + 6, cy: sr.y + 2, rx: 26, ry: 24, fill: 'url(#mm-cloth)' }));
+
+      const hg = buildHead(el, hd.x, hd.y, hd.r);
+      const head = hg.g;
+      refs.mouth = hg.mouth;
       refs.head = head;
       body.appendChild(head);
       svg.appendChild(body);
@@ -298,17 +395,23 @@
          the near edge onto the strings, are drawn after. */
       refs.handBack = el('g', { id: 'mm-hand-back' });
       svg.appendChild(refs.handBack);      // painted first, so the neck covers it
+
+      /* The fretting arm reaches the neck from behind the instrument, so it
+         belongs under it too. Drawn on top it laid a bar of forearm straight
+         across the fretboard and hid the frets it is supposed to be playing. */
+      refs.armFret = limb('arm-fret', 25, 'url(#mm-skin)');
+      svg.appendChild(refs.armFret.g);
+
       svg.appendChild(gtr);
 
       /* finger markers are created here but appended last: the fingering is the
          whole point of this view, so nothing may occlude it. */
       refs.fingers = el('g', { id: 'mm-fingers' });
 
-      /* arms on top */
-      refs.armFret = limb('arm-fret', 21, 'url(#mm-skin)');
-      refs.armStrum = limb('arm-strum', 21, 'url(#mm-skin)');
+      /* The strumming arm does rest over the front of the body, so it stays
+         on top — only the fretting arm goes behind. */
+      refs.armStrum = limb('arm-strum', 25, 'url(#mm-skin)');
       svg.appendChild(refs.armStrum.g);
-      svg.appendChild(refs.armFret.g);
       // The fingers that come over the near edge of the neck onto the strings.
       refs.handFront = el('g', { id: 'mm-hand-front' });
       svg.appendChild(refs.handFront);
@@ -342,15 +445,9 @@
       body.appendChild(el('circle', { cx: P.shL.x, cy: P.shL.y + 4, r: 28, fill: 'url(#mm-cloth)' }));
       body.appendChild(el('circle', { cx: P.shR.x, cy: P.shR.y + 4, r: 28, fill: 'url(#mm-cloth)' }));
 
-      const head = el('g');
-      head.appendChild(el('ellipse', { cx: P.head.x, cy: P.head.y, rx: P.head.r * .82, ry: P.head.r, fill: 'url(#mm-skin)' }));
-      head.appendChild(el('path', {
-        d: `M ${P.head.x - 39} ${P.head.y - 8} C ${P.head.x - 44} ${P.head.y - 56}, ${P.head.x + 44} ${P.head.y - 58}, ${P.head.x + 38} ${P.head.y - 6}
-            C ${P.head.x + 28} ${P.head.y - 32}, ${P.head.x - 26} ${P.head.y - 34}, ${P.head.x - 39} ${P.head.y - 8} Z`,
-        fill: '#241a14'
-      }));
-      head.appendChild(el('circle', { cx: P.head.x - 14, cy: P.head.y + 2, r: 3.3, fill: '#1a1410' }));
-      head.appendChild(el('circle', { cx: P.head.x + 14, cy: P.head.y + 2, r: 3.3, fill: '#1a1410' }));
+      const ph = buildHead(el, P.head.x, P.head.y, P.head.r);
+      const head = ph.g;
+      refs.mouth = ph.mouth;
       refs.head = head;
       body.appendChild(head);
       svg.appendChild(body);
@@ -648,10 +745,7 @@
       // fretting hand -> the chord's palm position
       const ft = refs.fretTarget || neckPoint(fretDist(1), 22);
       const ik1 = solveIK(shF.x, shF.y, ft.x, ft.y, G.upper, G.fore, 1);
-      refs.armFret.a.setAttribute('x1', shF.x); refs.armFret.a.setAttribute('y1', shF.y);
-      refs.armFret.a.setAttribute('x2', ik1.ex); refs.armFret.a.setAttribute('y2', ik1.ey);
-      refs.armFret.b.setAttribute('x1', ik1.ex); refs.armFret.b.setAttribute('y1', ik1.ey);
-      refs.armFret.b.setAttribute('x2', ik1.hx); refs.armFret.b.setAttribute('y2', ik1.hy);
+      refs.armFret.set(shF.x, shF.y, ik1.ex, ik1.ey, ik1.hx, ik1.hy);
       // The fretting hand is drawn from the chord geometry, not moved per
       // frame: it is gripping a neck that does not move, so it must not drift.
       // The arm reaches the same palm point, which is what fretTarget is.
@@ -666,10 +760,7 @@
       const sx = sh.x + G.px * (amp * 0.5 - smoothStrum * amp);
       const sy = sh.y + G.py * (amp * 0.5 - smoothStrum * amp);
       const ik2 = solveIK(shS.x, shS.y, sx, sy, G.upper, G.fore, 1);
-      refs.armStrum.a.setAttribute('x1', shS.x); refs.armStrum.a.setAttribute('y1', shS.y);
-      refs.armStrum.a.setAttribute('x2', ik2.ex); refs.armStrum.a.setAttribute('y2', ik2.ey);
-      refs.armStrum.b.setAttribute('x1', ik2.ex); refs.armStrum.b.setAttribute('y1', ik2.ey);
-      refs.armStrum.b.setAttribute('x2', ik2.hx); refs.armStrum.b.setAttribute('y2', ik2.hy);
+      refs.armStrum.set(shS.x, shS.y, ik2.ex, ik2.ey, ik2.hx, ik2.hy);
       refs.handStrum.setAttribute('cx', ik2.hx); refs.handStrum.setAttribute('cy', ik2.hy);
       refs.pick.setAttribute('transform', `translate(${ik2.hx - 4} ${ik2.hy + 12}) rotate(${-18 + smoothStrum * 30})`);
 
@@ -708,10 +799,7 @@
       const ikL = solveIK(shL.x, shL.y, lt.x, lt.y + dip * (beat.isDown ? 1 : .5), P.upper, P.fore, 1);
 
       const wire = (limbRef, sh, ik, hand) => {
-        limbRef.a.setAttribute('x1', sh.x); limbRef.a.setAttribute('y1', sh.y);
-        limbRef.a.setAttribute('x2', ik.ex); limbRef.a.setAttribute('y2', ik.ey);
-        limbRef.b.setAttribute('x1', ik.ex); limbRef.b.setAttribute('y1', ik.ey);
-        limbRef.b.setAttribute('x2', ik.hx); limbRef.b.setAttribute('y2', ik.hy);
+        limbRef.set(sh.x, sh.y, ik.ex, ik.ey, ik.hx, ik.hy);
         hand.setAttribute('cx', ik.hx); hand.setAttribute('cy', ik.hy);
       };
       wire(refs.armR, shR, ikR, refs.handR);
