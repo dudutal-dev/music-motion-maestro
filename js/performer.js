@@ -874,46 +874,65 @@
   /* ============================================================
      Static diagrams (used by lessons + character panels)
      ============================================================ */
+  /* The chart is laid out the way the guitar is actually seen rather than the
+     way chord books print it: the neck runs across, the nut sits at the right
+     end and the low E is the top string — a standard vertical chart given a
+     quarter turn clockwise. It is built in this orientation instead of being
+     rotated after the fact, because rotating the finished drawing would lay
+     every finger number and the chord name on their sides. */
+  const DIAGRAM_ASPECT = 0.8;          // height ÷ width
+
   function chordDiagramSVG(name, size) {
     const f = MM.guitarFingering(name);
-    const W = size || 150, H = W * 1.3;
+    const W = size || 150, H = Math.round(W * DIAGRAM_ASPECT);
     if (!f) return `<svg width="${W}" height="${H}"></svg>`;
-    const padX = W * .16, padTop = H * .18, gw = W - padX * 2, gh = H - padTop - H * .1;
     const nStr = 6, nFret = 5;
-    const sx = gw / (nStr - 1), sy = gh / nFret;
+    const padL = W * .06, padR = W * .18;       // the right pad holds the ○ / ✕
+    const padTop = H * .11, padBot = H * .20;   // the name sits under the board
+    const bw = W - padL - padR;                 // along the neck
+    const bh = H - padTop - padBot;             // across the strings
+    const nutX = W - padR;
+    const sx = bw / nFret, sy = bh / (nStr - 1);
     const frettedAll = f.shape.filter(x => typeof x === 'number' && x > 0);
     const maxFret = frettedAll.length ? Math.max.apply(null, frettedAll) : 0;
     // Anchor at the nut only when the whole shape fits in the window.
     const startFret = maxFret <= nFret ? 1 : f.baseFret;
+
+    const strY = i => padTop + i * sy;          // string 0 is the low E, on top
+    const fretX = j => nutX - j * sx;           // fret wires, running left
+    const dotX = r => nutX - (r + .5) * sx;     // the space between two wires
+
     let s = `<svg class="fretboard-svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">`;
     // nut / position marker
-    if (startFret === 1) s += `<rect x="${padX - 2}" y="${padTop - 5}" width="${gw + 4}" height="5" rx="2" fill="#e8e8ee"/>`;
-    else s += `<text x="${padX - 10}" y="${padTop + sy * .7}" fill="rgba(255,255,255,.6)" font-size="11" text-anchor="end" font-weight="700">${startFret}</text>`;
-    for (let i = 0; i <= nFret; i++)
-      s += `<line x1="${padX}" y1="${padTop + i * sy}" x2="${padX + gw}" y2="${padTop + i * sy}" stroke="rgba(255,255,255,.22)" stroke-width="1.2"/>`;
+    if (startFret === 1)
+      s += `<rect x="${nutX.toFixed(1)}" y="${(padTop - 3).toFixed(1)}" width="5" height="${(bh + 6).toFixed(1)}" rx="2" fill="#e8e8ee"/>`;
+    else
+      s += `<text x="${dotX(0).toFixed(1)}" y="${(padTop - 5).toFixed(1)}" fill="rgba(255,255,255,.6)" font-size="11" text-anchor="middle" font-weight="700">${startFret}</text>`;
+    for (let j = 0; j <= nFret; j++)
+      s += `<line x1="${fretX(j).toFixed(1)}" y1="${padTop.toFixed(1)}" x2="${fretX(j).toFixed(1)}" y2="${(padTop + bh).toFixed(1)}" stroke="rgba(255,255,255,.22)" stroke-width="1.2"/>`;
     for (let i = 0; i < nStr; i++)
-      s += `<line x1="${padX + i * sx}" y1="${padTop}" x2="${padX + i * sx}" y2="${padTop + gh}" stroke="rgba(255,255,255,.28)" stroke-width="1.2"/>`;
-    // barre
+      s += `<line x1="${fretX(nFret).toFixed(1)}" y1="${strY(i).toFixed(1)}" x2="${nutX.toFixed(1)}" y2="${strY(i).toFixed(1)}" stroke="rgba(255,255,255,.28)" stroke-width="1.2"/>`;
+    // barre — one finger laid across the strings, so it runs with them
     if (f.barre) {
-      const row = f.baseFret - startFret;
-      s += `<rect x="${padX - 6}" y="${padTop + row * sy + sy * .5 - 7}" width="${gw + 12}" height="14" rx="7" fill="#00e5d0" opacity=".92"/>`;
+      const r = f.baseFret - startFret;
+      s += `<rect x="${(dotX(r) - 7).toFixed(1)}" y="${(padTop - 6).toFixed(1)}" width="14" height="${(bh + 12).toFixed(1)}" rx="7" fill="#00e5d0" opacity=".92"/>`;
     }
+    const markX = nutX + Math.min(14, padR * .6);
     f.shape.forEach((fr, i) => {
-      // string 0 (low E) drawn leftmost in a standard chart
-      const x = padX + i * sx;
-      if (fr === 'x') s += `<text x="${x}" y="${padTop - 10}" fill="rgba(255,255,255,.5)" font-size="12" text-anchor="middle" font-weight="700">✕</text>`;
-      else if (fr === 0) s += `<circle cx="${x}" cy="${padTop - 14}" r="5" fill="none" stroke="#fff" stroke-width="1.8" opacity=".85"/>`;
+      const y = strY(i);
+      if (fr === 'x') s += `<text x="${markX.toFixed(1)}" y="${(y + 4).toFixed(1)}" fill="rgba(255,255,255,.5)" font-size="12" text-anchor="middle" font-weight="700">✕</text>`;
+      else if (fr === 0) s += `<circle cx="${markX.toFixed(1)}" cy="${y.toFixed(1)}" r="5" fill="none" stroke="#fff" stroke-width="1.8" opacity=".85"/>`;
       else {
-        const row = fr - startFret;
-        if (row < 0 || row >= nFret) return;
-        const cy = padTop + row * sy + sy * .5;
+        const r = fr - startFret;
+        if (r < 0 || r >= nFret) return;
+        const cx = dotX(r);
         if (!(f.barre && fr === f.baseFret))
-          s += `<circle cx="${x}" cy="${cy}" r="${Math.min(sx, sy) * .38}" fill="#00e5d0"/>`;
+          s += `<circle cx="${cx.toFixed(1)}" cy="${y.toFixed(1)}" r="${(Math.min(sx, sy) * .38).toFixed(1)}" fill="#00e5d0"/>`;
         const fin = f.fingers[i];
-        if (fin > 0) s += `<text x="${x}" y="${cy + 4}" fill="#00201d" font-size="11" text-anchor="middle" font-weight="800">${fin}</text>`;
+        if (fin > 0) s += `<text x="${cx.toFixed(1)}" y="${(y + 4).toFixed(1)}" fill="#00201d" font-size="11" text-anchor="middle" font-weight="800">${fin}</text>`;
       }
     });
-    s += `<text x="${W / 2}" y="${H - 3}" fill="rgba(255,255,255,.75)" font-size="13" text-anchor="middle" font-weight="800">${name}</text>`;
+    s += `<text x="${W / 2}" y="${H - 4}" fill="rgba(255,255,255,.75)" font-size="13" text-anchor="middle" font-weight="800">${name}</text>`;
     return s + '</svg>';
   }
 
@@ -950,5 +969,7 @@
     return s + '</svg>';
   }
 
-  global.Performer = { create, chordDiagramSVG, keyboardDiagramSVG };
+  // Exported so callers that size a box around a diagram — the PNG export and
+  // the poster burn-in — cannot drift out of step with the drawing itself.
+  global.Performer = { create, chordDiagramSVG, keyboardDiagramSVG, DIAGRAM_ASPECT };
 })(window);

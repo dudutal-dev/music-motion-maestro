@@ -851,7 +851,7 @@
    */
   function exportChordDiagram(chord, scale) {
     const s = scale || 4;
-    const W = 150, H = W * 1.3;
+    const W = 150, H = Math.round(W * PF.DIAGRAM_ASPECT);
     let svg = PF.chordDiagramSVG(chord, W);
     if (!/xmlns=/.test(svg)) svg = svg.replace('<svg ', '<svg xmlns="http://www.w3.org/2000/svg" ');
     const img = new Image();
@@ -1077,7 +1077,7 @@
         // diagram, burned in bottom-right
         const dImg = await svgToImg(PF.chordDiagramSVG(ch, 104));
         if (dImg) {
-          const dw = 104, dh = 104 * 1.3;
+          const dw = 104, dh = Math.round(104 * PF.DIAGRAM_ASPECT);
           x.fillStyle = 'rgba(0,0,0,.62)';
           x.fillRect(cx + cellW - dw - 12, cy + cellH - dh - 12, dw, dh);
           x.drawImage(dImg, cx + cellW - dw - 12, cy + cellH - dh - 12, dw, dh);
@@ -2307,6 +2307,26 @@ python scripts/extract_chords.py work/audio.wav --beats work/analysis.json --out
   /* ============================================================
      Events
      ============================================================ */
+  /**
+   * Opens and closes the phone drawer.
+   *
+   * On a phone the sidebar slides over the page, so it has to be dismissed
+   * as well as opened — and picking a screen from it is a dismissal. Leaving
+   * it up meant the screen you just chose was behind the menu that chose it.
+   */
+  function setNav(open) {
+    state.navOpen = open;
+    const bar = $('#sidebar');
+    if (bar) bar.classList.toggle('open', open);
+    let scrim = document.querySelector('.sidebar-scrim');
+    if (open && !scrim) {
+      scrim = document.createElement('div');
+      scrim.className = 'sidebar-scrim';
+      scrim.addEventListener('click', () => setNav(false));
+      document.body.appendChild(scrim);
+    } else if (!open && scrim) scrim.remove();
+  }
+
   function onClick(e) {
     const routeEl = e.target.closest('[data-route]');
     if (routeEl) {
@@ -2315,12 +2335,16 @@ python scripts/extract_chords.py work/audio.wav --beats work/analysis.json --out
       // Focus mode belongs to the stage; navigating away must not leave the
       // rest of the app with its chrome hidden.
       if (state.stageFocus && routeEl.dataset.route !== 'stage') setStageFocus(false);
+      setNav(false);
       render();
       $('#main').scrollTop = 0;
       return;
     }
     const act = e.target.closest('[data-action]');
     const a = act && act.dataset.action;
+    // Anything picked out of the drawer dismisses it, not just the routes:
+    // "הוסף שיר" opens a dialog that would otherwise sit behind the menu.
+    if (act && a !== 'nav-toggle' && act.closest('#sidebar')) setNav(false);
 
     if (a === 'close-modal') return closeModal();
     if (a === 'add-track') return addTrackModal();
@@ -2396,22 +2420,7 @@ python scripts/extract_chords.py work/audio.wav --beats work/analysis.json --out
         () => { ta.removeAttribute('readonly'); ta.select(); document.execCommand('copy'); toast('הועתק'); });
       return;
     }
-    if (a === 'nav-toggle') {
-      state.navOpen = !state.navOpen;
-      $('#sidebar').classList.toggle('open', state.navOpen);
-      let scrim = document.querySelector('.sidebar-scrim');
-      if (state.navOpen && !scrim) {
-        scrim = document.createElement('div');
-        scrim.className = 'sidebar-scrim';
-        scrim.addEventListener('click', () => {
-          state.navOpen = false;
-          $('#sidebar').classList.remove('open');
-          scrim.remove();
-        });
-        document.body.appendChild(scrim);
-      } else if (!state.navOpen && scrim) scrim.remove();
-      return;
-    }
+    if (a === 'nav-toggle') { setNav(!state.navOpen); return; }
     if (a === 'clear-loop') { state.loop = null; return render(); }
     if (a === 'poster-export') return exportPoster();
     if (a === 'poster-cutout') {
