@@ -149,7 +149,15 @@
         page: Math.floor(i / perPage),
         state: c.end <= at ? 'done' : (c.start <= at ? 'now' : 'next'),
         through: c.start <= at && at < c.end
-          ? Math.max(0, Math.min(1, (at - c.start) / (c.end - c.start))) : 0
+          ? Math.max(0, Math.min(1, (at - c.start) / (c.end - c.start))) : 0,
+        /* Seconds left on this chord, for the cell that is sounding.
+           The fill already says roughly how far through it you are; the
+           number says exactly how long you have, which is what you need when
+           the change is a bar-and-a-half of barre chord away and you have to
+           decide whether to start moving now. Null on every other cell —
+           a chord that is not playing has no time left on it. */
+        remaining: c.start <= at && at < c.end ? +(c.end - at).toFixed(2) : null,
+        length: +(c.end - c.start).toFixed(3)
       });
     }
     return { at, cols, rows, perPage, page, pages, index, anchor, cells,
@@ -415,6 +423,33 @@
         if (drew) nameY = by + (dy - by) / 2 + bh * 0.02;
       }
       g.fillText(c.chord, bx + bw / 2, nameY);
+
+      /* The countdown, in the corner of the cell that is playing.
+         Drawn last, and deliberately so: it sets its own face and colour, and
+         doing that before the name meant the name inherited them — the
+         sounding chord came out in the timer's monospace at the timer's size,
+         smaller than every chord around it, which is the exact opposite of
+         what the highlight is for.
+
+         Monospaced on purpose: a proportional face re-measures itself as the
+         digits change and the number twitches sideways ten times a second,
+         which is the wrong thing for something you glance at with your hands
+         busy. */
+      if (c.state === 'now' && c.remaining != null && bw >= 66 && bh >= 56) {
+        const ts = Math.max(13, Math.round(Math.min(bh * 0.16, bw * 0.19, 32)));
+        g.font = `700 ${ts}px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace`;
+        g.textAlign = 'right'; g.textBaseline = 'top';
+        g.direction = 'ltr';                       // a number, not a sentence
+        // Under ten seconds it counts in tenths so it visibly moves; above
+        // that a whole-second count is all anyone reads at a glance.
+        const left = Math.max(0, c.remaining);
+        const txt = left < 10 ? left.toFixed(1) : String(Math.ceil(left));
+        g.fillStyle = left <= 1 ? C.warn : C.accent;
+        g.globalAlpha = left <= 1 ? 1 : 0.9;
+        g.fillText(txt, bx + bw - Math.max(8, bw * 0.06), by + Math.max(6, bh * 0.045));
+        g.globalAlpha = 1;
+        g.direction = 'inherit';
+      }
       g.restore();
     }
     g.restore();
