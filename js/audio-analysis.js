@@ -566,10 +566,18 @@
 
     const startedAt = Date.now();
     const limit = Math.max(5, o.seconds || 60);
+    /* Counting wall-clock seconds is the wrong stop condition for "the whole
+       song": the recording starts wherever playback has already reached, so
+       running for the song's full length overshoots the end by exactly that
+       much and appends whatever plays next. Callers can supply their own
+       condition and stop at the end of the track instead. */
+    const isDone = typeof o.shouldStop === 'function'
+      ? o.shouldStop
+      : (elapsed) => elapsed >= limit;
     ticker = setInterval(() => {
       const elapsed = (Date.now() - startedAt) / 1000;
       if (o.onTick) o.onTick(elapsed, limit);
-      if (elapsed >= limit) finish();
+      if (isDone(elapsed)) finish();
     }, 250);
 
     await done;

@@ -1630,8 +1630,23 @@ python scripts/build_sync_map.py work/analysis.json --chords work/chords.json --
 
     const t = Store.getTrack(trackId);
     const pick = parseFloat($('#cap-secs').value);
-    // "whole song" needs a length; the player knows it once the video is cued.
-    const secs = pick > 0 ? pick : Math.ceil(P.duration || 0) || 90;
+    const songLen = Math.ceil(P.duration || 0);
+
+    /* "Whole song" used to record for the song's length in wall-clock
+       seconds. But recording starts wherever playback has already reached --
+       choosing a tab takes several seconds -- so it ran past the end by
+       exactly that much and appended whatever played next, while the opening
+       it had already passed was never captured at all. It now stops when
+       playback reaches the end of the track, which is the thing actually
+       meant by "the whole song". */
+    const whole = !(pick > 0);
+    if (whole && !songLen) {
+      out.innerHTML = `<div class="hand-readout" style="color:var(--bad)">
+        עוד לא ידוע אורך השיר. לחץ נגן פעם אחת כדי שהנגן יטען אותו, ואז נסה שוב —
+        או בחר משך קבוע.</div>`;
+      return;
+    }
+    const secs = whole ? songLen : pick;
 
     captureControl = {};
     let offset = 0;
@@ -1660,12 +1675,24 @@ python scripts/build_sync_map.py work/analysis.json --chords work/chords.json --
       const buf = await capture({
         seconds: secs,
         control: captureControl,
+        // For the whole song, the end of the track is the stop condition; a
+        // fixed length still counts seconds. The 2s floor keeps a mis-read
+        // duration from ending the recording immediately.
+        shouldStop: whole
+          ? (elapsed) => elapsed > 2 && P.duration > 0 && P.time() >= P.duration - 0.25
+          : undefined,
         // Only the app's own playback gives a trustworthy position; if the song
         // is coming from somewhere else the recording starts at an unknown
         // point and the manual nudge is the honest fallback.
         onStart: () => { offset = P.playing ? Math.max(0, P.time() || 0) : 0; },
-        onTick: (elapsed, limit) => {
-          status.textContent = `מקליט… ${Math.floor(elapsed)} / ${Math.round(limit)} שניות`;
+        onTick: (elapsed) => {
+          // Against the song, not against a stopwatch: with an offset the two
+          // differ, and the song's own position is what the user can verify.
+          const at = Math.floor(P.time() || 0);
+          const of = Math.round(P.duration || secs);
+          status.textContent = whole
+            ? `מקליט… ${fmt(at)} / ${fmt(of)} מהשיר`
+            : `מקליט… ${Math.floor(elapsed)} / ${Math.round(secs)} שניות`;
         }
       });
 
@@ -1740,9 +1767,10 @@ python scripts/build_sync_map.py work/analysis.json --chords work/chords.json --
           <select id="cap-secs">
             <option value="60">דקה — מהיר, מספיק לרוב השירים</option>
             <option value="120">שתי דקות</option>
-            <option value="0">כל השיר — הכי מדויק</option>
+            <option value="0">כל השיר — הכי מדויק (לוקח כאורך השיר)</option>
           </select>
-          <div class="hint">הפרוגרסיה חוזרת על עצמה, ולכן דקה בדרך כלל מספיקה.</div>
+          <div class="hint">הפרוגרסיה חוזרת על עצמה, ולכן דקה בדרך כלל מספיקה.
+            "כל השיר" מקליט עד הסוף בפועל — ולכן נמשך בדיוק כאורך השיר.</div>
         </div>
         <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:14px">
           <button class="btn btn-primary" data-action="capture-tab">התחל הקלטה וניתוח</button>
