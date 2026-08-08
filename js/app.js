@@ -1350,6 +1350,12 @@ python scripts/build_sync_map.py work/analysis.json --chords work/chords.json --
     const sec = A.sectionAt(a, time);
     const energy = sec ? ({ low: .35, mid: .62, high: .95 }[sec.label] || .6) : .6;
 
+    if (state.stageMode === 'neck') {
+      /* The strumming hand has to be redrawn every frame — it is the thing
+         that moves between chord changes, and without it a chord that has
+         already been struck just sits there looking frozen. */
+      drawNeckOverlay(chord, { beat, energy, playing: P.playing && !P.adPlaying });
+    }
     if (state.performer) {
       state.performer.update({ chord, beat, playing: P.playing, energy });
     } else if (state.stageMode === 'hero') {
@@ -1445,7 +1451,7 @@ python scripts/build_sync_map.py work/analysis.json --chords work/chords.json --
    * natural size, because `object-fit: contain` leaves bars at the sides on
    * some shapes and the marks have to sit on the picture, not on the box.
    */
-  function drawNeckOverlay(chord) {
+  function drawNeckOverlay(chord, motion) {
     const img = $('#neck-stage-img'), cv = $('#neck-stage-cv');
     if (!img || !cv) return;
     const c = stageChar();
@@ -1471,7 +1477,17 @@ python scripts/build_sync_map.py work/analysis.json --chords work/chords.json --
     ctx.save();
     ctx.translate(ox, oy);
     const f = chord ? MM.guitarFingering(chord) : null;
-    Neck.draw(ctx, scaleCal(c.neck, w, h), f, { scale: Math.max(w, h) });
+    const cal = scaleCal(c.neck, w, h);
+    const S = Math.max(w, h);
+    Neck.draw(ctx, cal, f, { scale: S });
+    const m = motion || {};
+    Neck.drawStrum(ctx, cal, f, {
+      scale: S,
+      phase: m.beat ? m.beat.phase : 0.5,
+      isDown: m.beat ? m.beat.isDown : false,
+      energy: m.energy,
+      playing: m.playing !== false
+    });
     ctx.restore();
   }
 
@@ -1503,7 +1519,8 @@ python scripts/build_sync_map.py work/analysis.json --chords work/chords.json --
     if (hd) hd.innerHTML = diagram;
     if (hc) hc.textContent = chord;
     setHeroImage(chord);
-    drawNeckOverlay(chord);
+    // The neck overlay is not repainted here: it now redraws every frame from
+    // syncFrame, because the strumming hand moves between chord changes.
     // The same fingering on the stage itself, which is all that survives into
     // focus mode — the side panel that used to carry it is out of the layout.
     // Say plainly whether this chord was heard or carried over from the
@@ -2287,7 +2304,7 @@ python scripts/extract_chords.py work/audio.wav --beats work/analysis.json --out
   function calibrateNeckModal() {
     const src = pendingPortrait;
     if (!src) return toast('צרף קודם תמונה לדמות', true);
-    neckDraft = Object.assign({ wNut: 0.012, w12: 0.018, flip: false }, pendingNeck || {});
+    neckDraft = Object.assign({ wNut: 0.012, w12: 0.018, flip: false, strum: 0.85 }, pendingNeck || {});
     neckStep = pendingNeck ? NECK_STEPS.length : 0;
 
     modal('כיול צוואר הגיטרה', `
@@ -2306,6 +2323,10 @@ python scripts/extract_chords.py work/audio.wav --beats work/analysis.json --out
           <input id="neck-wnut" type="range" min="4" max="40" step="1"></div>
         <div class="field"><label>רוחב הצוואר בפרט 12 <span id="neck-w12"></span></label>
           <input id="neck-w12r" type="range" min="4" max="60" step="1"></div>
+        <div class="field"><label>איפה היד הימנית פורטת <span id="neck-st"></span></label>
+          <input id="neck-strum" type="range" min="55" max="120" step="1">
+          <div class="hint">הזז עד שהמפרט הצהוב יושב איפה שהיד הימנית באמת פורטת בתמונה —
+            מעל חור התהודה בגיטרה אקוסטית, ליד הגשר בחשמלית.</div></div>
         <label style="display:flex;gap:8px;align-items:center;font-size:14px;margin-bottom:10px">
           <input id="neck-flip" type="checkbox"> החלף צד מיתרים (מי הנמוך בצד השני)</label>
         <div class="field"><label>אקורד לבדיקה</label>
@@ -2335,8 +2356,11 @@ python scripts/extract_chords.py work/audio.wav --beats work/analysis.json --out
 
       if (Neck.isCalibrated(neckDraft)) {
         const f = MM.guitarFingering(($('#neck-test') && $('#neck-test').value) || 'C');
-        Neck.draw(ctx, scaleCal(neckDraft, r.width, r.height), f,
-          { scale: Math.max(r.width, r.height), ladder: true });
+        const cal = scaleCal(neckDraft, r.width, r.height);
+        const S = Math.max(r.width, r.height);
+        Neck.draw(ctx, cal, f, { scale: S, ladder: true });
+        // Parked mid-sweep, so the slider has something to aim with.
+        Neck.drawStrum(ctx, cal, f, { scale: S, playing: false });
       }
 
       // the marks themselves, on top, so they can always be seen and moved
@@ -2383,19 +2407,23 @@ python scripts/extract_chords.py work/audio.wav --beats work/analysis.json --out
       paint();
     });
 
-    const wn = $('#neck-wnut'), w12 = $('#neck-w12r'), flip = $('#neck-flip');
+    const wn = $('#neck-wnut'), w12 = $('#neck-w12r'), flip = $('#neck-flip'),
+          st = $('#neck-strum');
     wn.value = Math.round(neckDraft.wNut * 1000);
     w12.value = Math.round(neckDraft.w12 * 1000);
+    st.value = Math.round(neckDraft.strum * 100);
     flip.checked = !!neckDraft.flip;
     const syncTune = () => {
       neckDraft.wNut = +wn.value / 1000;
       neckDraft.w12 = +w12.value / 1000;
+      neckDraft.strum = +st.value / 100;
       neckDraft.flip = flip.checked;
       $('#neck-wn').textContent = wn.value;
       $('#neck-w12').textContent = w12.value;
+      $('#neck-st').textContent = st.value + '%';
       paint();
     };
-    [wn, w12, flip].forEach(el => el.addEventListener('input', syncTune));
+    [wn, w12, st, flip].forEach(el => el.addEventListener('input', syncTune));
     $('#neck-test').addEventListener('change', paint);
     syncTune();
     if (img.complete) paint(); else img.onload = paint;
@@ -2412,7 +2440,8 @@ python scripts/extract_chords.py work/audio.wav --beats work/analysis.json --out
     const px = Math.max(w, h);
     return {
       nut: m(cal.nut), bridge: m(cal.bridge), twelfth: m(cal.twelfth),
-      wNut: cal.wNut * px, w12: cal.w12 * px, flip: cal.flip
+      wNut: cal.wNut * px, w12: cal.w12 * px, flip: cal.flip,
+      strum: cal.strum          // a fraction along the neck, so it does not scale
     };
   }
 

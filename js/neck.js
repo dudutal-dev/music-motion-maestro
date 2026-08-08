@@ -241,8 +241,114 @@
     return true;
   }
 
+  /* ---------- the strumming hand ----------
+
+     The fretting hand says which notes; the strumming hand says when, and
+     without it a chord that has already changed just sits there. The
+     photograph's own right hand cannot move, so the stroke is drawn over it:
+     a pick travelling across the strings, down on the beat and back up
+     between beats — the same one-per-beat motion the animated performer
+     uses, so the two stages do not disagree about the rhythm.
+
+     It crosses only the strings that actually sound. A C chord starts on the
+     A string because the low E is muted, and a stroke that swept all six
+     would be teaching the wrong thing at the exact moment the player is
+     looking at it. */
+
+  /** Where along the neck the strumming happens; past the end of the board. */
+  const strumU = cal => (cal && cal.strum != null) ? cal.strum : 0.85;
+
+  /**
+   * @param o.phase   0..1 through the current beat
+   * @param o.isDown  whether this beat is a downbeat, which strums harder
+   * @param o.energy  0..1, how hard the section is being played
+   * @param o.playing false parks the hand instead of animating it
+   */
+  function drawStrum(ctx, cal, f, o) {
+    o = o || {};
+    if (!isCalibrated(cal)) return false;
+    const S = o.scale || 1000;
+
+    // The outermost strings this chord actually sounds.
+    let lo = 0, hi = 5;
+    if (f && f.shape) {
+      const live = [];
+      f.shape.forEach((fr, i) => { if (fr !== 'x') live.push(i); });
+      if (!live.length) return true;
+      lo = live[0]; hi = live[live.length - 1];
+    }
+
+    const phase = Math.max(0, Math.min(1, o.phase || 0));
+    // Down through the first half of the beat, back up through the second.
+    const raw = phase < 0.5 ? phase * 2 : (1 - phase) * 2;
+    const s = raw * raw * (3 - 2 * raw);                   // smoothstep
+    const going = phase < 0.5 ? 1 : -1;                    // down or up
+    const travel = o.playing === false ? 0.5 : s;
+    const pos = lo - 0.6 + (hi - lo + 1.2) * travel;
+
+    const u = strumU(cal);
+    const p = at(cal, pos, u);
+    const b = basis(cal);
+    const w = halfWidth(cal, u);
+    const r = Math.max(w * 0.30, 1.5);
+    const accent = o.color || '#00e5d0';
+    const power = (o.energy == null ? 0.7 : o.energy) * (o.isDown ? 1 : 0.75);
+
+    ctx.save();
+    ctx.lineCap = 'round';
+
+    if (o.playing !== false) {
+      /* The trail behind the pick is what makes a single frame read as
+         movement rather than as a dot sitting on a string. */
+      const from = at(cal, lo - 0.6 + (hi - lo + 1.2) * Math.max(0, travel - 0.28 * going), u);
+      ctx.strokeStyle = accent;
+      ctx.globalAlpha = 0.30 * power;
+      ctx.lineWidth = r * 1.1;
+      ctx.beginPath();
+      ctx.moveTo(from.x, from.y);
+      ctx.lineTo(p.x, p.y);
+      ctx.stroke();
+      ctx.globalAlpha = 1;
+
+      // Each string flashes as the stroke crosses it — but only if it sounds.
+      if (f && f.shape) {
+        f.shape.forEach((fr, i) => {
+          if (fr === 'x') return;
+          const d = Math.abs(pos - i);
+          if (d > 0.75) return;
+          const hit = (1 - d / 0.75) * power;
+          const q = at(cal, i, u);
+          ctx.strokeStyle = accent;
+          ctx.globalAlpha = 0.85 * hit;
+          ctx.lineWidth = Math.max(1, r * 0.35);
+          ctx.beginPath();
+          ctx.moveTo(q.x - b.ux * w * 1.6, q.y - b.uy * w * 1.6);
+          ctx.lineTo(q.x + b.ux * w * 1.6, q.y + b.uy * w * 1.6);
+          ctx.stroke();
+        });
+      }
+      ctx.globalAlpha = 1;
+    }
+
+    // The pick: a small triangle pointing the way it is travelling.
+    const ang = Math.atan2(b.py, b.px) + (going > 0 ? 0 : Math.PI);
+    ctx.translate(p.x, p.y);
+    ctx.rotate(ang);
+    ctx.fillStyle = '#ffd166';
+    ctx.shadowColor = '#ffd166';
+    ctx.shadowBlur = o.playing === false ? 0 : r * 1.8;
+    ctx.beginPath();
+    ctx.moveTo(-r * 0.85, -r * 0.7);
+    ctx.lineTo(-r * 0.85, r * 0.7);
+    ctx.lineTo(r * 1.15, 0);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+    return true;
+  }
+
   global.Neck = {
     fretFraction, pressFraction, project, twelfthParam,
-    isCalibrated, at, fingerAt, fretWire, halfWidth, draw
+    isCalibrated, at, fingerAt, fretWire, halfWidth, draw, drawStrum, strumU
   };
 })(window);
