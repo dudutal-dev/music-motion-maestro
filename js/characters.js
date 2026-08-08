@@ -787,6 +787,12 @@
     const barre = guitar && (MM.guitarFingering(chord) || {}).barre;
     const shape = barre ? 'a barre chord shape' : open ? 'an open chord shape' : 'a movable chord shape';
     const style = pick(STYLES, c.style, STYLES[3]);
+    /* The visual description leads in every tier, because fret and string
+       numbers are symbols an image model has no picture of. A distance is not
+       a symbol — the neck in the frame has a length to measure against — so
+       this goes in beside it rather than instead of it, and it brings the
+       thumb, which nothing else in these prompts has ever mentioned. */
+    const measured = (guitar && global.Fretboard) ? global.Fretboard.placementMm(chord) : null;
     const L = [];
 
     if (tier === 'macro') {
@@ -799,6 +805,7 @@
       L.push('');
       L.push('THE HAND IS THE SUBJECT. Get this exactly right:');
       L.push(visual || exact || '');
+      if (measured) { L.push(''); L.push(`Measured on the neck: ${measured}.`); }
       if (guitar) {
         L.push('');
         L.push('I am also attaching a chord diagram for this chord. Read it as the exact pattern ' +
@@ -831,6 +838,7 @@
       L.push(`THE CHORD — ${chordSpoken(chord)} (${chord}), ${shape}. The fretting hand is in the ` +
         'foreground, closest to the camera, large in frame and tack-sharp:');
       L.push(visual || exact || '');
+      if (measured) L.push(`Measured on the neck: ${measured}.`);
       L.push('');
       L.push('The instrument is angled so the face of the fretboard is turned toward the camera and ' +
         'the fingertips are unobstructed.');

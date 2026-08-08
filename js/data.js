@@ -262,8 +262,22 @@
       'fingers curved, wrists relaxed and level with the forearm';
   }
 
-  const fingeringSentence = (name, instrument) =>
-    instrument === 'piano' ? pianoVoicingSentence(name) : guitarFingeringSentence(name);
+  /**
+   * The fingering as a sentence for an image model.
+   *
+   * For a guitar it now carries real distances as well as string and fret
+   * numbers. "Fret 3" is a symbol an image model has no picture of; "87mm
+   * from the nut" is a distance, and the neck in the frame has a length it
+   * can be measured against. The thumb comes with it, which the old sentence
+   * never mentioned at all — and a thumb left unsaid is why generated
+   * guitarists so often have one draped over the top of the neck.
+   */
+  const fingeringSentence = (name, instrument) => {
+    if (instrument === 'piano') return pianoVoicingSentence(name);
+    const base = guitarFingeringSentence(name);
+    const mm = global.Fretboard ? global.Fretboard.placementMm(name) : null;
+    return mm ? `${base} — measured on the neck: ${mm}` : base;
+  };
 
   /* ---------- visual translation ----------
      "middle finger on string 5 at fret 2" is musician notation. An image model
