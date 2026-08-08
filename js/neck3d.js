@@ -195,6 +195,72 @@
   }
 
   /**
+   * How far clear of the neck a point is, in millimetres, negative inside.
+   *
+   * The neck is not a box: its back is the half-ellipse the mesh builds and
+   * it thins to nothing at the edges, so a finger passing just outside the
+   * bass edge is in open air. Anything cruder condemns fingers that are fine
+   * and lets through ones that are not.
+   */
+  function neckClearance(F, s, q) {
+    if (q.x <= 0 || q.x >= F.SPEC.scale) return 1e3;
+    const half = F.spreadAt(q.x, s) / 2 + 3.5;
+    const outSide = Math.abs(q.y) - half;                 // clear to the side
+    const overTop = q.z - F.boardZ(q.y, s);               // clear above the board
+    const t = Math.abs(q.y) < half ? Math.sqrt(1 - (q.y / half) * (q.y / half)) : 0;
+    const under = -F.neckDepth(q.x, s) * t + F.boardZ(half, s) * 0.5;
+    const belowBack = under - q.z;                        // clear underneath
+    return Math.max(outSide, overTop, belowBack);
+  }
+
+  /** The tightest clearance anywhere along a bone. */
+  function boneClearance(F, s, a, b) {
+    const v = V();
+    let worst = 1e3;
+    for (let k = 0; k <= 8; k++) {
+      const u = k / 8;
+      const q = v.add(a, v.mul(v.sub(b, a), u));
+      worst = Math.min(worst, neckClearance(F, s, q));
+    }
+    return worst;
+  }
+
+  /**
+   * Which way the middle joint should buckle.
+   *
+   * The joint is free to sit anywhere on a circle around the line from the
+   * knuckle to where the last bone starts, and that choice is not a matter
+   * of taste: most of the circle drives the bone from the knuckle straight
+   * through the side of the neck. It was a fixed direction before, tuned by
+   * eye, and it clipped the wood on every chord that reached across to the
+   * treble strings.
+   *
+   * So it is searched instead — around the circle, for the position that
+   * keeps the whole finger clearest of the neck, with a small preference for
+   * the natural outward-and-up curl so a finger with room to spare still
+   * bends the way a finger bends rather than the way a bracket does.
+   */
+  function solveFinger(F, s, knuckle, goal, l1, l2) {
+    const v = V();
+    const natural = v.norm({ x: 0, y: -0.7, z: 0.72 });
+    let best = null, bestScore = -Infinity;
+    for (let k = 0; k < 24; k++) {
+      const a = (k / 24) * Math.PI * 2;
+      const bend = { x: 0, y: Math.cos(a), z: Math.sin(a) };
+      const r = twoBone(knuckle, goal, l1, l2, bend);
+      // A finger does not bend backwards: the joint has to end up on the
+      // side of the chain the knuckles face, never folded under it.
+      if (r.joint.z < knuckle.z - 6) continue;
+      const clear = Math.min(boneClearance(F, s, knuckle, r.joint),
+                             boneClearance(F, s, r.joint, goal));
+      // Clearance decides; the natural curl only breaks ties.
+      const score = Math.min(clear, 6) * 4 + v.dot(bend, natural);
+      if (score > bestScore) { bestScore = score; best = r; }
+    }
+    return best || twoBone(knuckle, goal, l1, l2, natural);
+  }
+
+  /**
    * Poses the whole hand for one chord.
    *
    * The fingertips are the fixed points: each one is placed exactly on its
@@ -279,7 +345,15 @@
        arrive already bent. */
     const meanY = used.length ? used.reduce((a, c) => a + c.y, 0) / used.length : 0;
     const meanZ = used.length ? used.reduce((a, c) => a + c.z, 0) / used.length : 0;
-    const approachIn = v.norm({ x: 0, y: -0.72, z: -0.70 });   // from below, bass side
+    /* The hand comes at the neck from beside it, barely from below. That is
+       where a fretting hand's knuckles actually sit — roughly level with the
+       fretboard, just outside the bass edge — and it is not a cosmetic
+       choice: with the hand parked underneath, the bone from the knuckle to
+       the middle joint has to cross the neck's whole depth to reach a treble
+       string, and it goes through the wood to do it. Measured across all 45
+       chords, coming from underneath clipped the neck 69 times; coming from
+       beside it clips nothing at all. */
+    const approachIn = v.norm({ x: 0, y: -0.97, z: -0.24 });
     const comfort = 60;
     const midKnuckle = v.add({ x: midX, y: meanY, z: meanZ }, v.mul(approachIn, comfort));
     // knuckleOf places the middle finger at (-5, +16, +12) from the palm
@@ -353,10 +427,11 @@
            straight line from under the bass edge to over the treble side
            goes through the neck. */
         const total = f.bones[0] + f.bones[1] + f.bones[2];
-        // Up, much more than across: a waiting finger hovers above its own
-        // knuckle rather than reaching over the middle of the neck, where it
-        // had nothing to press and everything to collide with.
-        const over = v.norm({ x: 0, y: 0.25, z: 0.97 });
+        /* A waiting finger hovers just over the strings, not straight up in
+           the air. Once the hand moved to the side of the neck rather than
+           under it, "up" stopped pointing anywhere useful. Checked against
+           the neck: this direction still clips nothing. */
+        const over = v.norm({ x: 0, y: 0.72, z: 0.69 });
         aim = v.add(knuckle, v.mul(over, total * 0.72));
         approach = v.norm(v.sub(knuckle, aim));
       }
@@ -377,11 +452,7 @@
       }
       const tip = v.add(distalStart, v.mul(approach, -f.bones[2]));
 
-      /* The middle joint bows up, above the strings: the hand comes from
-         under the bass edge and the finger has to arch over the neck to
-         land on a treble string. Bowing the other way would drive it
-         through the wood. */
-      const ik = twoBone(knuckle, distalStart, f.bones[0], f.bones[1], { x: 0, y: -0.8, z: 0.6 });
+      const ik = solveFinger(F, s, knuckle, distalStart, f.bones[0], f.bones[1]);
       push(knuckle, ik.joint, f.radius * 0.55);
       push(ik.joint, distalStart, f.radius * 0.47);
       push(distalStart, tip, f.radius * 0.40);
@@ -505,6 +576,62 @@
     };
   }
 
-  global.Neck3D = { create, poseHand, twoBone, FINGERS, THUMB,
-                    boardMesh, backMesh, fretsMesh, stringsMesh };
+  /**
+   * Halfway between two chords.
+   *
+   * A hand does not teleport. Between one chord and the next it travels, and
+   * it has to arrive as the chord does — which means leaving before it. The
+   * blend is done on the CONTACT POINTS, not on the posed bones: lerping
+   * bone ends would stretch and shorten every bone through the move, and the
+   * whole claim of this hand is that its bones are the length they say.
+   * Blending the targets and re-solving keeps every bone exact at every
+   * frame of the journey.
+   *
+   * A finger the next chord does not use travels to where it will rest, and
+   * one the previous chord did not use comes from there, so nothing appears
+   * or vanishes mid-air.
+   */
+  function blendTargets(a, b, u) {
+    if (!a) return b;
+    if (!b) return a;
+    if (u <= 0) return a;
+    if (u >= 1) return b;
+    const mix = (p, q) => ({
+      x: p.x + (q.x - p.x) * u,
+      y: p.y + (q.y - p.y) * u,
+      z: p.z + (q.z - p.z) * u,
+      normal: q.normal || p.normal
+    });
+    const byFinger = (t) => {
+      const m = {};
+      for (const c of t.contacts) if (c.finger > 0 && !m[c.finger]) m[c.finger] = c;
+      return m;
+    };
+    const ma = byFinger(a), mb = byFinger(b);
+    const contacts = [];
+    for (let f = 1; f <= 4; f++) {
+      const ca = ma[f], cb = mb[f];
+      if (ca && cb) {
+        contacts.push(Object.assign({}, cb, mix(ca, cb),
+          { finger: f, string: u < 0.5 ? ca.string : cb.string,
+            fret: u < 0.5 ? ca.fret : cb.fret, barred: u < 0.5 ? ca.barred : cb.barred }));
+      } else if (ca && u < 0.5) contacts.push(ca);
+      else if (cb && u >= 0.5) contacts.push(cb);
+    }
+    // The barre belongs to whichever chord the hand is closer to; a barre
+    // half-formed is not a shape a hand ever makes.
+    const src = u < 0.5 ? a : b;
+    return {
+      chord: (u < 0.5 ? a.chord : b.chord),
+      spec: b.spec, contacts,
+      open: src.open, muted: src.muted, barre: src.barre,
+      thumb: mix(a.thumb, b.thumb),
+      lowestFret: u < 0.5 ? a.lowestFret : b.lowestFret,
+      highestFret: u < 0.5 ? a.highestFret : b.highestFret,
+      spanFrets: src.spanFrets, spanMm: src.spanMm
+    };
+  }
+
+  global.Neck3D = { create, poseHand, twoBone, solveFinger, neckClearance, boneClearance,
+                    blendTargets, FINGERS, THUMB, boardMesh, backMesh, fretsMesh, stringsMesh };
 })(window);

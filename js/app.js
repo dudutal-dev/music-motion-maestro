@@ -1496,13 +1496,51 @@ python scripts/build_sync_map.py work/analysis.json --chords work/chords.json --
     gl3d = null; glDrag = null;
   }
 
+  /* Chord targets never change for a given chord, and solving a finger now
+     searches two dozen bend directions for clearance — far too much to redo
+     sixty times a second for a shape that is standing still. */
+  const glTargetCache = new Map();
+  function targetsFor(chord) {
+    if (!chord) return null;
+    if (!glTargetCache.has(chord)) glTargetCache.set(chord, Fretboard.chordTargets(chord));
+    return glTargetCache.get(chord);
+  }
+
+  /**
+   * What the hand should be doing at this instant.
+   *
+   * A real player leaves the old chord before the new one sounds, so the
+   * hand arrives with the beat instead of jumping on it. The app knows the
+   * whole chord timeline in advance, so the move can start early by exactly
+   * the time it needs — capped at half a beat, because at a fast tempo there
+   * is no more than that to spare.
+   */
+  function glTargetsAt(time) {
+    const t = state.currentTrackId ? Store.getTrack(state.currentTrackId) : null;
+    const a = t && t.analysis;
+    if (!a || !a.chords) return targetsFor(liveChord());
+    const seg = A.chordAt(a, time);
+    if (!seg) return null;
+    const beat = a.bpm ? 60 / a.bpm : 0.5;
+    const travel = Math.min(0.22, beat * 0.5);
+    const next = A.chordAt(a, seg.end + 0.01);
+    if (!next || next.chord === seg.chord) return targetsFor(seg.chord);
+    const startsMovingAt = seg.end - travel;
+    if (time < startsMovingAt) return targetsFor(seg.chord);
+    const u = Math.max(0, Math.min(1, (time - startsMovingAt) / travel));
+    // Ease so the hand sets off and settles rather than sliding at a
+    // constant rate, which reads as a machine part.
+    const e = u * u * (3 - 2 * u);
+    return Neck3D.blendTargets(targetsFor(seg.chord), targetsFor(next.chord), e);
+  }
+
   function drawGl(chord) {
     if (!gl3d || !gl3d.canvas) return;
     const box = gl3d.canvas.parentElement.getBoundingClientRect();
     if (!box.width || !box.height) return;
     gl3d.canvas.style.width = box.width + 'px';
     gl3d.canvas.style.height = box.height + 'px';
-    const targets = chord ? Fretboard.chordTargets(chord) : null;
+    const targets = glTargetsAt(P.time() || 0) || targetsFor(chord);
     gl3d.render(box.width, box.height, gl3d.pose(targets), state.glTargets !== false);
     // A frame counter, because the whole reason to build this before the
     // character is to find out what it costs on a phone.
