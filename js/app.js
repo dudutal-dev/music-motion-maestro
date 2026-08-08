@@ -1717,30 +1717,53 @@ python scripts/build_sync_map.py work/analysis.json --chords work/chords.json --
     // Ads and stalls make wall clock longer than the song; this is the point
     // past which something has clearly gone wrong and we stop regardless.
     const ceiling = whole ? songLen * 2 + 180 : secs * 3 + 120;
+    let rolling = false, playFailed = false, watch = null;
 
     const restore = () => {
       startBtn.disabled = false;
       stopBtn.style.display = 'none';
       captureControl = {};
+      if (watch) { clearInterval(watch); watch = null; }
     };
 
     try {
-      // Start the song first. Picking a tab takes a few seconds, and if we
-      // waited until after it the recording would open on silence. Playing now
-      // means sound is already flowing when the track goes live — and the
-      // player's clock then tells us exactly where in the song we started.
-      if (t && P.ready) { P.seek(0); P.play(); }
-
+      /* Ask for the audio before touching the player.
+         The song used to be started first, on the reasoning that the tab
+         picker takes a few seconds and the recording would otherwise open on
+         silence. But that is exactly backwards: the song played through the
+         whole permission dialog and those seconds — the intro, usually the
+         part with the clearest chords — were never recorded at all. Now the
+         stream goes live first and the song starts from the top afterwards,
+         so nothing plays into a recorder that is not listening yet. */
       status.textContent = source === 'mic'
-        ? 'ממתין לאישור מיקרופון… (השיר כבר מתנגן)'
-        : 'ממתין לאישור שיתוף… (השיר כבר מתנגן)';
+        ? 'אשר גישה למיקרופון — השיר יתחיל מיד אחרי כן'
+        : 'בחר את הכרטיסייה הזאת וסמן "שתף גם את האודיו" — השיר יתחיל מיד אחרי כן';
       const { segments } = await capture({
         seconds: secs,
         control: captureControl,
-        /* An ad is not the song. The recorder cuts a fresh segment around it,
-           so the ad's sound never reaches the analyser and never shifts the
-           chords that come after it. */
-        wanted: () => !P.adPlaying,
+        /* Two reasons not to be recording: the song has not started yet, and
+           an ad is playing over it. An ad's sound in the take would shift
+           every chord after it by the ad's length. */
+        wanted: () => rolling && !P.adPlaying,
+        onStart: () => {
+          // The stream is live, so now the song can run from the top.
+          if (t && t.videoId && P.ready) {
+            P.seek(0); P.play();
+            const from = Date.now();
+            watch = setInterval(() => {
+              // An ad counts as started: playback is running, and `wanted`
+              // holds the recorder off on its own until the song is back.
+              if (P.playing) { rolling = true; clearInterval(watch); watch = null; }
+              else if (Date.now() - from > 5000) {
+                playFailed = true;
+                clearInterval(watch); watch = null;
+                if (captureControl.stop) captureControl.stop();
+              }
+            }, 60);
+          } else {
+            rolling = true;      // nothing here drives playback; take what is audible
+          }
+        },
         position: () => Math.max(0, P.time() || 0),
         nothingWantedMessage: 'רק פרסומות התנגנו לאורך כל ההקלטה. המתן שהשיר יתחיל ונסה שוב.',
         /* For the whole song, the end of the track is the stop condition; a
@@ -1759,6 +1782,12 @@ python scripts/build_sync_map.py work/analysis.json --chords work/chords.json --
         onTick: (elapsed) => {
           const dt = lastTick ? elapsed - lastTick : 0;
           lastTick = elapsed;
+          if (!rolling) {
+            // The seconds before the song answers are nobody's: they are not
+            // song, so they must not count against a fixed-length take.
+            status.textContent = 'מתחיל את השיר…';
+            return;
+          }
           if (P.adPlaying) {
             adSeen = true;
             status.textContent = 'פרסומת מתנגנת — ההקלטה ממתינה ותמשיך מעצמה…';
@@ -1797,6 +1826,14 @@ python scripts/build_sync_map.py work/analysis.json --chords work/chords.json --
       if (!parts.length) throw new Error(
         'ההקלטה נקטעה על ידי פרסומות ולא נשאר בה מספיק מהשיר כדי לנתח. נסה שוב.');
       const a = A.mergeAnalyses(parts);
+      /* The recorder opens on the first tick after playback is confirmed, so
+         the take can begin a fraction of a second into the song. Left alone
+         that fraction has no chord over it at all; the opening chord plainly
+         covers it, so it is pulled back to the top of the song. */
+      if (a.chords.length && a.chords[0].start > 0 && a.chords[0].start < 1.5) {
+        a.chords[0] = { ...a.chords[0], start: 0 };
+        if (a.sections && a.sections.length) a.sections[0].start = 0;
+      }
       // The recording may be shorter than the song; the chart should still span
       // the whole track, so keep the player's length as the authority.
       if (P.duration && P.duration > a.duration) a.duration = +P.duration.toFixed(2);
@@ -1809,7 +1846,12 @@ python scripts/build_sync_map.py work/analysis.json --chords work/chords.json --
     } catch (err) {
       P.pause();
       status.textContent = '';
-      out.innerHTML = `<div class="hand-readout" style="color:var(--bad)">${esc(err.message || 'ההקלטה נכשלה')}</div>`;
+      // Autoplay is the one failure the recorder cannot describe: it got a
+      // live stream and heard nothing, because the song never started.
+      const msg = playFailed
+        ? 'הדפדפן לא נתן לשיר להתחיל לבד. לחץ נגן פעם אחת כדי לאשר לו, ואז הפעל ניתוח שוב.'
+        : (err.message || 'ההקלטה נכשלה');
+      out.innerHTML = `<div class="hand-readout" style="color:var(--bad)">${esc(msg)}</div>`;
     } finally {
       restore();
     }
@@ -1853,9 +1895,11 @@ python scripts/build_sync_map.py work/analysis.json --chords work/chords.json --
       </div>
       <div id="tab-tab">
         <div class="panel-desc" style="margin-bottom:16px">
-          אין צורך בקובץ אודיו. השיר כבר מתנגן כאן — האפליקציה תקליט את הקול
-          של הכרטיסייה הזאת בזמן שהוא מתנגן, ותוציא ממנו
-          <b>BPM, סולם, אקורדים ומבנה</b>. ההקלטה לא נשמרת ולא נשלחת לשום מקום.
+          אין צורך בקובץ אודיו. האפליקציה מקליטה את הקול של הכרטיסייה הזאת
+          ומוציאה ממנו <b>BPM, סולם, אקורדים ומבנה</b>.
+          <b>סדר הפעולות:</b> קודם תתבקש לאשר, ורק אחרי שתאשר השיר יתחיל
+          מההתחלה — כדי שגם הפתיחה תיכנס להקלטה ולא תתנגן בזמן שאתה מאשר.
+          ההקלטה לא נשמרת ולא נשלחת לשום מקום.
         </div>
         <div class="field" style="max-width:340px">
           <label>מאיפה לקלוט</label>

@@ -620,12 +620,16 @@
     const isDone = typeof o.shouldStop === 'function'
       ? o.shouldStop
       : (elapsed) => elapsed >= limit;
+    /* Polled often rather than a few times a second, because this is what
+       decides when a segment opens: the caller turns `wanted` on the instant
+       the song starts, and every tick of delay past that is song the take
+       never gets. */
     ticker = setInterval(() => {
       const elapsed = (Date.now() - startedAt) / 1000;
       if (wanted()) openSeg(); else closeSeg();
       if (o.onTick) o.onTick(elapsed, limit);
       if (isDone(elapsed)) finish();
-    }, 250);
+    }, 60);
 
     // Whatever ends the recording, every open segment has to be flushed first.
     await done;
