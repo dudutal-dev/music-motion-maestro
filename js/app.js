@@ -542,6 +542,7 @@
                 ${stageChar() && stageChar().portrait ? '' : 'disabled'}>🖼️ דמות ריאליסטית</button>
               <button class="chip ${state.stageMode === 'neck' ? 'active' : ''}" data-mode="neck"
                 ${stageChar() && stageChar().portrait && stageChar().neck ? '' : 'disabled'}>🎯 אצבעות על התמונה</button>
+              <button class="chip ${state.stageMode === 'gl' ? 'active' : ''}" data-mode="gl">🧊 צוואר תלת־ממד</button>
             </div>
             ${(() => {
               const c = stageChar();
@@ -1262,7 +1263,19 @@ python scripts/build_sync_map.py work/analysis.json --chords work/chords.json --
     const neckMode = state.stageMode === 'neck' && stageChar() &&
                      stageChar().portrait && Neck.isCalibrated(stageChar().neck);
     const heroMode = state.stageMode === 'hero' && stageChar() && stageChar().portrait;
-    if (neckMode) {
+    if (state.stageMode === 'gl') {
+      /* The neck and the fretting hand, built from the millimetre geometry
+         rather than drawn over a picture. No body and no player: those are
+         the parts that need an artist, and this exists to find out whether
+         the geometry and the reaching hold up before any of that is spent. */
+      state.performer = null;
+      const wrap = document.createElement('div');
+      wrap.className = 'gl-stage';
+      wrap.innerHTML = `<canvas id="gl-canvas"></canvas>
+        <div class="gl-hint" id="gl-hint">גרור כדי לסובב</div>`;
+      host.appendChild(wrap);
+      startGl(wrap.querySelector('#gl-canvas'));
+    } else if (neckMode) {
       /* The picture is the performer and stays exactly as it was generated;
          only the fingering is drawn over it, in the place the calibration
          says the guitar actually is. Nothing here is an approximation of the
@@ -1350,6 +1363,7 @@ python scripts/build_sync_map.py work/analysis.json --chords work/chords.json --
     const sec = A.sectionAt(a, time);
     const energy = sec ? ({ low: .35, mid: .62, high: .95 }[sec.label] || .6) : .6;
 
+    if (state.stageMode === 'gl') drawGl(chord);
     if (state.stageMode === 'neck') {
       /* The strumming hand has to be redrawn every frame — it is the thing
          that moves between chord changes, and without it a chord that has
@@ -1434,6 +1448,71 @@ python scripts/build_sync_map.py work/analysis.json --chords work/chords.json --
         if (hs.textContent !== nm) hs.textContent = nm;
       }
       updateHandReadout(chord);
+    }
+  }
+
+  /* ---------------- the 3D neck ----------------
+     One renderer for the life of the stage: WebGL contexts are a limited
+     resource and a browser will start dropping the oldest if a new one is
+     made on every re-render. */
+  let gl3d = null, glDrag = null, glFps = { n: 0, at: 0, value: 0 };
+
+  function startGl(canvas) {
+    stopGl();
+    try {
+      gl3d = Neck3D.create(canvas, { frets: 7 });
+    } catch (e) {
+      gl3d = null;
+      console.error(e);
+    }
+    if (!gl3d) {
+      const hint = $('#gl-hint');
+      if (hint) hint.textContent = 'הדפדפן הזה לא תומך בתלת־ממד (WebGL). נסה תצוגה אחרת.';
+      return;
+    }
+    // Dragging turns the neck. Pointer events cover mouse and touch together,
+    // and capture keeps the drag alive when it leaves the canvas.
+    const down = (e) => {
+      glDrag = { x: e.clientX, y: e.clientY, ...gl3d.view };
+      canvas.setPointerCapture && canvas.setPointerCapture(e.pointerId);
+    };
+    const move = (e) => {
+      if (!glDrag || !gl3d) return;
+      gl3d.setView(glDrag.orbit + (e.clientX - glDrag.x) * 0.006,
+                   glDrag.tilt - (e.clientY - glDrag.y) * 0.006);
+      e.preventDefault();
+    };
+    const up = () => { glDrag = null; };
+    canvas.addEventListener('pointerdown', down);
+    canvas.addEventListener('pointermove', move);
+    canvas.addEventListener('pointerup', up);
+    canvas.addEventListener('pointercancel', up);
+    gl3d.canvas = canvas;
+    drawGl(liveChord());
+  }
+
+  function stopGl() {
+    if (gl3d && gl3d.dispose) { try { gl3d.dispose(); } catch (e) { /* already gone */ } }
+    gl3d = null; glDrag = null;
+  }
+
+  function drawGl(chord) {
+    if (!gl3d || !gl3d.canvas) return;
+    const box = gl3d.canvas.parentElement.getBoundingClientRect();
+    if (!box.width || !box.height) return;
+    gl3d.canvas.style.width = box.width + 'px';
+    gl3d.canvas.style.height = box.height + 'px';
+    const targets = chord ? Fretboard.chordTargets(chord) : null;
+    gl3d.render(box.width, box.height, gl3d.pose(targets), state.glTargets !== false);
+    // A frame counter, because the whole reason to build this before the
+    // character is to find out what it costs on a phone.
+    const now = performance.now();
+    glFps.n++;
+    if (now - glFps.at > 1000) {
+      glFps.value = Math.round(glFps.n * 1000 / (now - glFps.at));
+      glFps.n = 0; glFps.at = now;
+      const hint = $('#gl-hint');
+      if (hint) hint.textContent = `גרור כדי לסובב · ${glFps.value} fps`;
     }
   }
 
@@ -2661,6 +2740,9 @@ python scripts/extract_chords.py work/audio.wav --beats work/analysis.json --out
   function onClick(e) {
     const routeEl = e.target.closest('[data-route]');
     if (routeEl) {
+      // Leaving the stage releases the WebGL context rather than leaving it
+      // to be reclaimed whenever the browser feels like it.
+      if (routeEl.dataset.route !== 'stage') stopGl();
       state.route = routeEl.dataset.route;
       state.activeLesson = null;
       // Focus mode belongs to the stage; navigating away must not leave the
@@ -3010,6 +3092,7 @@ python scripts/extract_chords.py work/audio.wav --beats work/analysis.json --out
     // stage display mode
     const mode = e.target.closest('[data-mode]');
     if (mode && !mode.disabled) {
+      if (mode.dataset.mode !== 'gl') stopGl();
       state.stageMode = mode.dataset.mode;
       lastReadoutChord = null;
       return render();
