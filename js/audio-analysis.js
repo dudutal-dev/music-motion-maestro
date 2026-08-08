@@ -542,26 +542,72 @@
       'לא נקלט קול. ודא שהשיר מתנגן ברמקול ושהעוצמה גבוהה מספיק.');
   }
 
-  /** Shared recorder: runs an audio track for `seconds`, or until stopped. */
+  /**
+   * Shared recorder: runs an audio track for `seconds`, or until stopped.
+   *
+   * It records in segments rather than one continuous take, because the sound
+   * coming off the tab is not always the song. YouTube drops its own video in
+   * before the song and sometimes in the middle of it, and that audio is not
+   * merely useless — analysed together with the song it shifts every chord
+   * after it by the ad's length. So the caller says, through `wanted()`, when
+   * the sound is the song; the recorder closes a segment the moment that turns
+   * false and opens a fresh one when it comes back. Each segment is a complete
+   * file on its own, and carries the song position it started at.
+   *
+   * @param {function} o.wanted    is the audio right now the thing we want
+   * @param {function} o.position  where in the song we are, in seconds
+   * @returns {Promise<{segments: Array<{buf: ArrayBuffer, at: number, len: number}>}>}
+   */
   async function recordTrack(audio, o, silenceMessage) {
-    const rec = new MediaRecorder(new MediaStream([audio]));
-    const chunks = [];
-    rec.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
+    const wanted = typeof o.wanted === 'function' ? o.wanted : () => true;
+    const position = typeof o.position === 'function' ? o.position : () => 0;
 
-    const done = new Promise(resolve => { rec.onstop = resolve; });
-    let ticker = null, finished = false;
+    let rec = null, chunks = null, segAt = 0, segWall = 0, everOpened = false;
+    const closing = [];
+
+    const openSeg = () => {
+      if (rec) return;
+      everOpened = true;
+      chunks = [];
+      rec = new MediaRecorder(new MediaStream([audio]));
+      const c = chunks;
+      rec.ondataavailable = e => { if (e.data && e.data.size) c.push(e.data); };
+      segAt = position();
+      segWall = Date.now();
+      rec.start();
+    };
+
+    const closeSeg = () => {
+      if (!rec) return;
+      const r = rec, c = chunks, at = segAt;
+      const len = (Date.now() - segWall) / 1000;
+      rec = null; chunks = null;
+      closing.push(new Promise(resolve => {
+        const collect = () => {
+          const blob = new Blob(c, { type: r.mimeType || 'audio/webm' });
+          resolve(blob.size > 2048 ? { blob, at, len } : null);
+        };
+        r.onstop = collect;
+        if (r.state !== 'inactive') r.stop();
+        else collect();
+      }));
+    };
+
+    let ticker = null, finished = false, resolveDone;
+    const done = new Promise(r => { resolveDone = r; });
     const finish = () => {
       if (finished) return;
       finished = true;
       if (ticker) clearInterval(ticker);
-      if (rec.state !== 'inactive') rec.stop();
+      closeSeg();
       audio.stop();
+      resolveDone();
     };
 
     if (o.control) o.control.stop = finish;
     audio.addEventListener('ended', finish);   // user hit "Stop sharing"
 
-    rec.start();
+    if (wanted()) openSeg();
     if (o.onStart) o.onStart();
 
     const startedAt = Date.now();
@@ -576,16 +622,24 @@
       : (elapsed) => elapsed >= limit;
     ticker = setInterval(() => {
       const elapsed = (Date.now() - startedAt) / 1000;
+      if (wanted()) openSeg(); else closeSeg();
       if (o.onTick) o.onTick(elapsed, limit);
       if (isDone(elapsed)) finish();
     }, 250);
 
+    // Whatever ends the recording, every open segment has to be flushed first.
     await done;
-    if (ticker) clearInterval(ticker);
+    const parts = (await Promise.all(closing)).filter(Boolean);
+    // "Nothing was recorded" and "nothing but ads played" look the same from
+    // here but need opposite advice, and the caller is the one that knows.
+    if (!parts.length) throw new Error(
+      everOpened ? silenceMessage : (o.nothingWantedMessage || silenceMessage));
 
-    const blob = new Blob(chunks, { type: rec.mimeType || 'audio/webm' });
-    if (blob.size < 2048) throw new Error(silenceMessage);
-    return blob.arrayBuffer();
+    const segments = [];
+    for (const p of parts) {
+      segments.push({ buf: await p.blob.arrayBuffer(), at: p.at, len: p.len });
+    }
+    return { segments };
   }
 
   global.AudioAnalysis = {

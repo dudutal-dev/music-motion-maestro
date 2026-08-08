@@ -414,6 +414,14 @@
           <li><b>🎧 קובץ אודיו</b> — אם יש לך mp3.</li>
           <li><b>ניתוח מונחה</b> — הקשת קצב + פרוגרסיה ידנית. עובד בכל מקום.</li>
         </ul>
+        <p><b>כמה להקליט.</b> הפרוגרסיה חוזרת על עצמה, ולכן דקה מספיקה לרוב השירים.
+          <b>"כל השיר"</b> מקליט עד הסוף בפועל — בלי הגבלת זמן, בלי תקרה בשניות.
+          מה שלא נמדד מושלם לפי המחזור ומסומן על הבמה <b>משוער</b> ולא <b>מדוד</b>,
+          כדי שלא תבלבל השערה עם מדידה.</p>
+        <p><b>פרסומות.</b> אם יוטיוב מכניס פרסומת, האפליקציה מזהה אותה, עוצרת את
+          ההקלטה ואת שעון השיר, וממשיכה לבד כשהשיר חוזר — בדיוק מאותו מקום.
+          הקול של הפרסומת לא נכנס לניתוח, והאקורדים שאחריה לא זזים.
+          אין צורך לעשות כלום, רק לא לסגור את החלון.</p>
         <div class="guide-state">${analysed.length
           ? `${analysed.length} מתוך ${tracks.length} שירים מנותחים.`
           : 'אף שיר לא נותח עדיין.'}</div>`,
@@ -516,6 +524,7 @@
               <span class="hud-pill">תיבה <b id="hud-bar">—</b></span>
               <span class="hud-pill" id="hud-section">—</span>
               ${t.analysis.analysedTo ? `<span class="hud-pill" id="hud-src">מדוד</span>` : ''}
+              <span class="hud-pill" id="hud-ad" style="display:${P.adPlaying ? '' : 'none'};color:var(--warn)">פרסומת</span>
             </div>` : ''}
           </div>
         </div>
@@ -1670,7 +1679,6 @@ python scripts/build_sync_map.py work/analysis.json --chords work/chords.json --
 
     const t = Store.getTrack(trackId);
     const pick = parseFloat($('#cap-secs').value);
-    const songLen = Math.ceil(P.duration || 0);
 
     /* "Whole song" used to record for the song's length in wall-clock
        seconds. But recording starts wherever playback has already reached --
@@ -1680,18 +1688,35 @@ python scripts/build_sync_map.py work/analysis.json --chords work/chords.json --
        playback reaches the end of the track, which is the thing actually
        meant by "the whole song". */
     const whole = !(pick > 0);
+
+    /* Cue the video before anything else. A cued video reports its own length
+       with no ad on top of it, and that number is what tells an ad apart from
+       the song for the rest of the recording — as well as being the "whole
+       song" stop line. Asking for it up front also means the user is never
+       told to "press play once first". */
+    if (t && t.videoId && P.ready && (P.videoId !== t.videoId || !P.duration)) {
+      status.textContent = 'טוען את השיר…';
+      P.load(t.videoId, false);
+      for (let i = 0; i < 40 && !P.duration; i++) await new Promise(r => setTimeout(r, 150));
+    }
+    const songLen = Math.ceil(P.duration || 0);
     if (whole && !songLen) {
       out.innerHTML = `<div class="hand-readout" style="color:var(--bad)">
-        עוד לא ידוע אורך השיר. לחץ נגן פעם אחת כדי שהנגן יטען אותו, ואז נסה שוב —
-        או בחר משך קבוע.</div>`;
+        לא הצלחתי לקרוא את אורך השיר מהנגן. נסה שוב, או בחר משך קבוע.</div>`;
+      status.textContent = '';
       return;
     }
     const secs = whole ? songLen : pick;
 
     captureControl = {};
-    let offset = 0;
     startBtn.disabled = true;
     stopBtn.style.display = '';
+    // Seconds of song actually recorded — ad time does not count toward the
+    // fixed-length choice, or a pre-roll would eat most of "record a minute".
+    let songSecs = 0, lastTick = 0, adSeen = false;
+    // Ads and stalls make wall clock longer than the song; this is the point
+    // past which something has clearly gone wrong and we stop regardless.
+    const ceiling = whole ? songLen * 2 + 180 : secs * 3 + 120;
 
     const restore = () => {
       startBtn.disabled = false;
@@ -1704,48 +1729,83 @@ python scripts/build_sync_map.py work/analysis.json --chords work/chords.json --
       // waited until after it the recording would open on silence. Playing now
       // means sound is already flowing when the track goes live — and the
       // player's clock then tells us exactly where in the song we started.
-      if (t && P.ready) {
-        if (P.videoId !== t.videoId) P.load(t.videoId, true);
-        else { P.seek(0); P.play(); }
-      }
+      if (t && P.ready) { P.seek(0); P.play(); }
 
       status.textContent = source === 'mic'
         ? 'ממתין לאישור מיקרופון… (השיר כבר מתנגן)'
         : 'ממתין לאישור שיתוף… (השיר כבר מתנגן)';
-      const buf = await capture({
+      const { segments } = await capture({
         seconds: secs,
         control: captureControl,
-        // For the whole song, the end of the track is the stop condition; a
-        // fixed length still counts seconds. The 2s floor keeps a mis-read
-        // duration from ending the recording immediately.
-        shouldStop: whole
-          ? (elapsed) => elapsed > 2 && P.duration > 0 && P.time() >= P.duration - 0.25
-          : undefined,
-        // Only the app's own playback gives a trustworthy position; if the song
-        // is coming from somewhere else the recording starts at an unknown
-        // point and the manual nudge is the honest fallback.
-        onStart: () => { offset = P.playing ? Math.max(0, P.time() || 0) : 0; },
+        /* An ad is not the song. The recorder cuts a fresh segment around it,
+           so the ad's sound never reaches the analyser and never shifts the
+           chords that come after it. */
+        wanted: () => !P.adPlaying,
+        position: () => Math.max(0, P.time() || 0),
+        nothingWantedMessage: 'רק פרסומות התנגנו לאורך כל ההקלטה. המתן שהשיר יתחיל ונסה שוב.',
+        /* For the whole song, the end of the track is the stop condition; a
+           fixed length counts recorded song, not wall clock, so an ad does
+           not eat most of "record a minute". The 2s floor keeps a mis-read
+           duration from ending the recording immediately, and the ceiling
+           makes sure a stalled player or an endless ad break ends the
+           recording rather than leaving it running forever. */
+        shouldStop: (elapsed) => {
+          if (elapsed >= ceiling) return true;
+          return whole
+            ? (elapsed > 2 && !P.adPlaying && P.duration > 0 &&
+               P.time() >= P.duration - 0.25)
+            : songSecs >= secs;
+        },
         onTick: (elapsed) => {
-          // Against the song, not against a stopwatch: with an offset the two
-          // differ, and the song's own position is what the user can verify.
+          const dt = lastTick ? elapsed - lastTick : 0;
+          lastTick = elapsed;
+          if (P.adPlaying) {
+            adSeen = true;
+            status.textContent = 'פרסומת מתנגנת — ההקלטה ממתינה ותמשיך מעצמה…';
+            return;
+          }
+          songSecs += dt;
+          // Against the song, not against a stopwatch: with ads in the way the
+          // two differ, and the song's own position is what the user can verify.
           const at = Math.floor(P.time() || 0);
           const of = Math.round(P.duration || secs);
           status.textContent = whole
             ? `מקליט… ${fmt(at)} / ${fmt(of)} מהשיר`
-            : `מקליט… ${Math.floor(elapsed)} / ${Math.round(secs)} שניות`;
+            : `מקליט… ${Math.floor(songSecs)} / ${Math.round(secs)} שניות`;
         }
       });
 
       P.pause();
       status.textContent = 'מנתח…';
-      const a = AA.shiftAnalysis(
-        await AA.analyzeFile(buf, m => { status.textContent = m; }), offset);
+      /* Each segment is a piece of the same song at a known position, so each
+         is analysed on its own and rebased onto song time before they are
+         stitched back together. Pieces too short to hold a bar or two say
+         nothing reliable about tempo, so they are left out. */
+      const long = segments.filter(s => s.len >= 8);
+      /* ...unless nothing is that long, which is what stopping early looks
+         like. A short take is still the take the user asked for, so analyse
+         the best of what there is rather than refusing outright. */
+      const chosen = long.length ? long
+        : segments.length ? [segments.reduce((a, b) => b.len > a.len ? b : a)] : [];
+      const parts = [];
+      for (const [i, seg] of chosen.entries()) {
+        status.textContent = chosen.length > 1
+          ? `מנתח קטע ${i + 1} מתוך ${chosen.length}…` : 'מנתח…';
+        parts.push(AA.shiftAnalysis(
+          await AA.analyzeFile(seg.buf, m => { status.textContent = m; }), seg.at));
+      }
+      if (!parts.length) throw new Error(
+        'ההקלטה נקטעה על ידי פרסומות ולא נשאר בה מספיק מהשיר כדי לנתח. נסה שוב.');
+      const a = A.mergeAnalyses(parts);
       // The recording may be shorter than the song; the chart should still span
       // the whole track, so keep the player's length as the authority.
       if (P.duration && P.duration > a.duration) a.duration = +P.duration.toFixed(2);
       autoAnalysis = a;
       status.textContent = '';
-      out.innerHTML = renderAutoResult(a, 'הקלטה מהכרטיסייה');
+      out.innerHTML = renderAutoResult(a, 'הקלטה מהכרטיסייה') +
+        (adSeen ? `<div class="hint" style="margin-top:8px;color:var(--warn)">
+          זוהתה פרסומת במהלך ההשמעה. הקול שלה לא נכלל בניתוח, וההקלטה נמשכה
+          אחריה${parts.length > 1 ? ` — השיר נותח ב-${parts.length} קטעים` : ''}.</div>` : '');
     } catch (err) {
       P.pause();
       status.textContent = '';
@@ -1810,7 +1870,9 @@ python scripts/build_sync_map.py work/analysis.json --chords work/chords.json --
             <option value="0">כל השיר — הכי מדויק (לוקח כאורך השיר)</option>
           </select>
           <div class="hint">הפרוגרסיה חוזרת על עצמה, ולכן דקה בדרך כלל מספיקה.
-            "כל השיר" מקליט עד הסוף בפועל — ולכן נמשך בדיוק כאורך השיר.</div>
+            "כל השיר" מקליט עד הסוף בפועל, בלי הגבלת זמן — ולכן נמשך בדיוק כאורך השיר.
+            אם יוטיוב מכניס פרסומת, ההקלטה עוצרת לזמן הפרסומת וממשיכה אחריה לבד;
+            הפרסומת לא נכנסת לניתוח.</div>
         </div>
         <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:14px">
           <button class="btn btn-primary" data-action="capture-tab">התחל הקלטה וניתוח</button>
@@ -2690,6 +2752,15 @@ python scripts/extract_chords.py work/audio.wav --beats work/analysis.json --out
 
     P.init('yt-mount');
     P.on('state', () => { updatePlayerBar(); });
+    /* An ad freezes the song clock, so the performer holds its last chord
+       instead of playing to the ad. Without a word on screen that looks like
+       the app has hung, so say what is happening. */
+    P.on('ad', (on) => {
+      document.body.classList.toggle('is-ad', on);
+      const pill = $('#hud-ad');
+      if (pill) pill.style.display = on ? '' : 'none';
+      if (on) toast('פרסומת מתנגנת — הנגינה תמשיך מעצמה כשהשיר יחזור');
+    });
     P.on('time', (t, dur) => {
       const cur = $('#t-cur'), du = $('#t-dur'), fill = $('#scrub-fill');
       if (cur) cur.textContent = fmt(t);

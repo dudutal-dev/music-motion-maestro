@@ -284,8 +284,62 @@
     return a;
   }
 
+  /**
+   * Stitches the analyses of several recorded pieces of one song into one.
+   *
+   * An ad in the middle of a song splits the recording in two, and each half
+   * gets analysed on its own — separately they each describe a different part
+   * of the same song, already on song time. Merging keeps every chord from
+   * every part instead of throwing away all but the longest, so a song
+   * interrupted by ads is still covered end to end.
+   *
+   * Tempo, key and the summary numbers come from the longest part, which has
+   * the most evidence behind them; the short part either agrees or is too
+   * short to argue with.
+   */
+  function mergeAnalyses(parts) {
+    parts = (parts || []).filter(p => p && p.chords && p.chords.length);
+    if (!parts.length) return null;
+    if (parts.length === 1) return parts[0];
+
+    const span = p => (p.chords[p.chords.length - 1].end - p.chords[0].start);
+    const main = parts.reduce((a, b) => span(b) > span(a) ? b : a);
+    const out = Object.assign({}, main);
+
+    // Overlaps are possible where the parts meet; the earlier one wins the
+    // disputed moment, because it was measured with more of its bar in view.
+    const chords = [];
+    for (const c of parts.flatMap(p => p.chords).sort((a, b) => a.start - b.start)) {
+      const last = chords[chords.length - 1];
+      if (last && c.start < last.end - 0.05) {
+        if (c.end <= last.end) continue;
+        chords.push({ ...c, start: last.end });
+      } else chords.push({ ...c });
+    }
+    out.chords = chords;
+
+    const uniq = (list) => {
+      const s = [...list].sort((a, b) => a - b), keep = [];
+      for (const t of s) if (!keep.length || t - keep[keep.length - 1] > 0.05) keep.push(t);
+      return keep;
+    };
+    out.beatTimes = uniq(parts.flatMap(p => p.beatTimes || []));
+    out.downbeats = uniq(parts.flatMap(p => p.downbeats || []));
+    out.sections = parts.flatMap(p => p.sections || []).sort((a, b) => a.start - b.start);
+    out.duration = +Math.max(...parts.map(p => p.duration || 0)).toFixed(2);
+    out.analyzedFrom = Math.min(...parts.map(p => p.analyzedFrom || 0));
+    // Two takes stitched together are less certain than one clean one.
+    const conf = main.confidence || {};
+    out.confidence = {
+      tempo: +Math.min(...parts.map(p => (p.confidence || {}).tempo != null ? p.confidence.tempo : conf.tempo || 0)).toFixed(3),
+      key: +Math.min(...parts.map(p => (p.confidence || {}).key != null ? p.confidence.key : conf.key || 0)).toFixed(3)
+    };
+    out.parts = parts.length;
+    return out;
+  }
+
   global.Analysis = {
-    extendChords,
+    extendChords, mergeAnalyses,
     emptyAnalysis, buildBeatGrid, fromProgression, fromSkillJson,
     chordAt, chordIndexAt, sectionAt, beatPhase, summaryLine, progressionOf, TapTempo
   };
