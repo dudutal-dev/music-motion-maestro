@@ -228,6 +228,29 @@
                verts: positions.length / 3 };
     }
 
+    /**
+     * A mesh whose contents change every time the hand moves.
+     * The static path uploads once and never again; the hand is re-swept
+     * whenever the pose changes, so its buffers are declared dynamic and
+     * refilled in place rather than recreated.
+     */
+    function dynamicMesh() {
+      return { pb: gl.createBuffer(), nb: gl.createBuffer(), ib: gl.createBuffer(),
+               count: 0, type: gl.UNSIGNED_SHORT, verts: 0, dynamic: true };
+    }
+
+    function upload(m, positions, normals, indices) {
+      gl.bindBuffer(gl.ARRAY_BUFFER, m.pb);
+      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(positions), gl.DYNAMIC_DRAW);
+      gl.bindBuffer(gl.ARRAY_BUFFER, m.nb);
+      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(normals), gl.DYNAMIC_DRAW);
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, m.ib);
+      gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(indices), gl.DYNAMIC_DRAW);
+      m.count = indices.length;
+      m.verts = positions.length / 3;
+      return m;
+    }
+
     function frame(w, h, camera) {
       const dpr = Math.min(global.devicePixelRatio || 1, 2);
       const W = Math.max(1, Math.round(w * dpr)), H = Math.max(1, Math.round(h * dpr));
@@ -263,7 +286,7 @@
       if (ext) ext.loseContext();
     }
 
-    return { gl, mesh, frame, draw, dispose, M4,
+    return { gl, mesh, dynamicMesh, upload, frame, draw, dispose, M4,
              get lost() { return gl.isContextLost(); } };
   }
 

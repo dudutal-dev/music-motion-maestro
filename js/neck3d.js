@@ -311,7 +311,10 @@
       let num = 0, den = 0;
       for (const [i, x] of rowPts) { num += (i - mi) * (x - mx); den += (i - mi) * (i - mi); }
       // Clamped to what a hand can actually span between knuckles.
-      gap = Math.max(8, Math.min(26, den ? num / den : 13));
+      // Adjacent knuckles are about 20mm apart on an adult hand; the wrist
+      // can angle the row but it cannot stretch it, and letting this run to
+      // 26 gave a four-knuckle span of 78mm and a palm to match.
+      gap = Math.max(8, Math.min(21, den ? num / den : 13));
       rowBase = mx - mi * gap;
     } else if (rowPts.length === 1) {
       rowBase = rowPts[0][1] - rowPts[0][0] * gap;
@@ -469,6 +472,185 @@
     return { palm, bones, contacts };
   }
 
+  /* ---------- building the hand as a surface ----------
+
+     The first version drew a bone as a cylinder with a ball at the joint.
+     It got the geometry right and looked like plumbing: every joint showed
+     a seam where two primitives met, and a palm was a box.
+
+     A finger is one continuous surface. So it is built as one — a tube swept
+     along a smooth line through the four joint positions, its radius tapering
+     from knuckle to tip. The joints stop being places where two objects
+     overlap and become places where the surface bends, which is what a joint
+     is.
+     ============================================================ */
+
+  /** A smooth line through the joints, so a finger bends instead of kinking. */
+  function smoothChain(pts, per) {
+    const out = [];
+    const at = (i) => pts[Math.max(0, Math.min(pts.length - 1, i))];
+    for (let i = 0; i < pts.length - 1; i++) {
+      const p0 = at(i - 1), p1 = at(i), p2 = at(i + 1), p3 = at(i + 2);
+      const steps = (i === pts.length - 2) ? per : per - 1;
+      for (let k = 0; k <= steps; k++) {
+        const t = k / per, t2 = t * t, t3 = t2 * t;
+        // Catmull-Rom: passes through every joint, curves smoothly between
+        out.push({
+          x: 0.5 * ((2 * p1.x) + (-p0.x + p2.x) * t + (2 * p0.x - 5 * p1.x + 4 * p2.x - p3.x) * t2 + (-p0.x + 3 * p1.x - 3 * p2.x + p3.x) * t3),
+          y: 0.5 * ((2 * p1.y) + (-p0.y + p2.y) * t + (2 * p0.y - 5 * p1.y + 4 * p2.y - p3.y) * t2 + (-p0.y + 3 * p1.y - 3 * p2.y + p3.y) * t3),
+          z: 0.5 * ((2 * p1.z) + (-p0.z + p2.z) * t + (2 * p0.z - 5 * p1.z + 4 * p2.z - p3.z) * t2 + (-p0.z + 3 * p1.z - 3 * p2.z + p3.z) * t3)
+        });
+      }
+    }
+    return out;
+  }
+
+  /**
+   * Sweeps a round tube along a line, appending to a mesh under construction.
+   *
+   * The ring is carried along the curve rather than rebuilt at each step:
+   * building it fresh from a fixed up-vector makes the tube spin about its
+   * own axis wherever the curve turns, and on a finger that reads as the
+   * skin sliding around the bone.
+   */
+  function sweep(m, line, radiusAt, sides, capEnd) {
+    const v = V();
+    if (line.length < 2) return;
+    const base = m.P.length / 3;
+    let nrm = null;
+    for (let i = 0; i < line.length; i++) {
+      const prev = line[Math.max(0, i - 1)], next = line[Math.min(line.length - 1, i + 1)];
+      const tan = v.norm(v.sub(next, prev));
+      if (!nrm) {
+        const ref = Math.abs(tan.z) < 0.9 ? { x: 0, y: 0, z: 1 } : { x: 0, y: 1, z: 0 };
+        nrm = v.norm(v.cross(tan, ref));
+      } else {
+        // carry the previous ring forward, squared up to the new tangent
+        nrm = v.norm(v.sub(nrm, v.mul(tan, v.dot(nrm, tan))));
+      }
+      const bi = v.cross(tan, nrm);
+      const r = radiusAt(i / (line.length - 1));
+      for (let k = 0; k < sides; k++) {
+        const a = (k / sides) * Math.PI * 2;
+        const dir = v.add(v.mul(nrm, Math.cos(a)), v.mul(bi, Math.sin(a)));
+        m.P.push(line[i].x + dir.x * r, line[i].y + dir.y * r, line[i].z + dir.z * r);
+        m.N.push(dir.x, dir.y, dir.z);
+      }
+    }
+    for (let i = 0; i < line.length - 1; i++) {
+      for (let k = 0; k < sides; k++) {
+        const k2 = (k + 1) % sides;
+        const a = base + i * sides, b = a + sides;
+        m.I.push(a + k, b + k, b + k2, a + k, b + k2, a + k2);
+      }
+    }
+    if (capEnd) {
+      // A fingertip is round, not a hole.
+      const end = line[line.length - 1];
+      const prev = line[line.length - 2];
+      const tan = v.norm(v.sub(end, prev));
+      const r = radiusAt(1);
+      const c = m.P.length / 3;
+      m.P.push(end.x + tan.x * r * 0.9, end.y + tan.y * r * 0.9, end.z + tan.z * r * 0.9);
+      m.N.push(tan.x, tan.y, tan.z);
+      const ring = base + (line.length - 1) * sides;
+      for (let k = 0; k < sides; k++) m.I.push(c, ring + k, ring + ((k + 1) % sides));
+    }
+  }
+
+  /**
+   * The palm.
+   *
+   * Swept the same way as a finger, from the wrist to the knuckle row, with
+   * an elliptical section that widens toward the knuckles — a hand is much
+   * wider than it is thick, which is the single thing a box got most wrong.
+   * The thumb side carries an extra lobe for the muscle at the base of the
+   * thumb, which is what gives a palm its shape from every angle a box looks
+   * flat from.
+   */
+  function palmMesh(m, pose, knuckles, sides) {
+    const v = V();
+    const kc = knuckles.reduce((a, k) => v.add(a, k), { x: 0, y: 0, z: 0 });
+    const centre = v.mul(kc, 1 / knuckles.length);
+    const U = v.norm(v.sub(centre, pose.palm));           // wrist toward knuckles
+    const V2 = v.norm(v.sub(knuckles[3], knuckles[0]));   // index toward pinky
+    const W = v.norm(v.cross(U, V2));                     // through the palm
+    const wrist = v.sub(centre, v.mul(U, 62));
+
+    const rows = 16;
+    const base = m.P.length / 3;
+    for (let i = 0; i <= rows; i++) {
+      const t = i / rows;
+      const p = v.add(wrist, v.mul(U, 62 * t));
+      // narrow at the wrist, widest across the knuckles
+      // Narrow at the wrist and widest across the knuckles — a hand is a
+      // wedge, not a slab, and the taper is most of what says so.
+      const halfW = 18 + 17 * Math.sin(Math.min(1, t * 1.15) * Math.PI * 0.5);
+      const halfT = 14.5 - 4.0 * t;
+      for (let k = 0; k < sides; k++) {
+        const a = (k / sides) * Math.PI * 2;
+        // the thenar: a lobe on the thumb side, low on the palm
+        const thenar = Math.max(0, Math.cos(a)) * Math.max(0, 1 - Math.abs(t - 0.3) * 2.6) * 7;
+        /* Four knuckles at the finger end. Without them the palm finishes in
+           a flat cap and the fingers appear to sprout out of a plate; with
+           them the hand ends the way a hand does, and each finger grows from
+           a knuckle of its own. */
+        const across = -Math.cos(a);
+        const atEnd = Math.max(0, (t - 0.62) / 0.38);
+        const knuckle = atEnd * atEnd * 3.4 * Math.max(0, Math.cos(across * Math.PI * 4));
+        // The palm side is padded; the back of the hand is not.
+        const pad = Math.max(0, -Math.sin(a)) * 2.2;
+        const wy = (halfW + thenar) * Math.cos(a);
+        const wz = (halfT + knuckle + pad) * Math.sin(a);
+        const q = v.add(p, v.add(v.mul(V2, -wy), v.mul(W, wz)));
+        const n = v.norm(v.add(v.mul(V2, -Math.cos(a) * halfT), v.mul(W, Math.sin(a) * halfW)));
+        m.P.push(q.x, q.y, q.z);
+        m.N.push(n.x, n.y, n.z);
+      }
+    }
+    for (let i = 0; i < rows; i++) {
+      for (let k = 0; k < sides; k++) {
+        const k2 = (k + 1) % sides;
+        const a = base + i * sides, b = a + sides;
+        m.I.push(a + k, b + k, b + k2, a + k, b + k2, a + k2);
+      }
+    }
+    // close both ends so the palm is a solid, not a sleeve
+    for (const [row, flip] of [[0, true], [rows, false]]) {
+      const ring = base + row * sides;
+      const p = v.add(wrist, v.mul(U, 62 * (row / rows)));
+      const c = m.P.length / 3;
+      const n = flip ? v.mul(U, -1) : U;
+      m.P.push(p.x, p.y, p.z);
+      m.N.push(n.x, n.y, n.z);
+      for (let k = 0; k < sides; k++) {
+        const k2 = (k + 1) % sides;
+        if (flip) m.I.push(c, ring + k, ring + k2);
+        else m.I.push(c, ring + k2, ring + k);
+      }
+    }
+  }
+
+  /** The whole hand as one surface: palm, four fingers, thumb. */
+  function handMesh(pose) {
+    const m = { P: [], N: [], I: [] };
+    const sides = 10;
+    const knuckles = [0, 1, 2, 3].map(i => pose.bones[i * 3].a);
+    palmMesh(m, pose, knuckles, 14);
+    FINGERS.forEach((f, i) => {
+      const b0 = pose.bones[i * 3], b1 = pose.bones[i * 3 + 1], b2 = pose.bones[i * 3 + 2];
+      const line = smoothChain([b0.a, b0.b, b1.b, b2.b], 5);
+      // A finger is thickest at the knuckle and narrows to the tip, with the
+      // joints a touch wider than the shafts between them.
+      sweep(m, line, (t) => f.radius * (0.60 - 0.20 * t) + Math.sin(t * Math.PI * 3) * f.radius * 0.035,
+        sides, true);
+    });
+    const t0 = pose.bones[12], t1 = pose.bones[13];
+    sweep(m, smoothChain([t0.a, t0.b, t1.b], 5),
+      (t) => THUMB.radius * (0.62 - 0.16 * t), sides, true);
+    return m;
+  }
+
   /* ---------- putting it on screen ---------- */
 
   function create(canvas, opts) {
@@ -484,10 +666,12 @@
       back: r.mesh(...flat(backMesh(F, upto))),
       frets: r.mesh(...flat(fretsMesh(F, upto))),
       strings: r.mesh(...flat(stringsMesh(F, upto))),
-      cyl: r.mesh(...flat(global.Gl.cylinder(10))),
       ball: r.mesh(...flat(global.Gl.sphere(9))),
-      box: r.mesh(...flat(global.Gl.box()))
+      hand: r.dynamicMesh()
     };
+    // The hand surface is rebuilt only when the pose actually changes, which
+    // between chords is not at all.
+    let handKey = null;
     function flat(m) { return [m.positions, m.normals, m.indices]; }
 
     const COLOR = {
@@ -508,8 +692,8 @@
     function camera(w, h) {
       const mid = F.pressX(3, s);
       // Framed to hold the neck and the hand below it, not the hand alone.
-      const at = { x: mid, y: -20, z: -16 };
-      const dist = 360;
+      const at = { x: mid, y: -24, z: -18 };
+      const dist = 420;
       const eye = {
         x: at.x + Math.sin(orbit) * Math.cos(tilt) * dist - 40,
         y: at.y - Math.cos(orbit) * Math.cos(tilt) * dist,
@@ -519,19 +703,6 @@
     }
 
     const M4 = r.M4;
-    /** A segment drawn as a cylinder from a to b, with a ball at each joint. */
-    function limb(a, b, rad, color) {
-      const v = V();
-      const d = v.sub(b, a);
-      const L = v.len(d);
-      if (L < 0.001) return;
-      const m = M4.multiply(
-        M4.multiply(M4.translate(a), M4.alignX(d)),
-        M4.scale({ x: L, y: rad, z: rad }));
-      r.draw(meshes.cyl, m, color, 0.10);
-      r.draw(meshes.ball, M4.multiply(M4.translate(b), M4.scale({ x: rad, y: rad, z: rad })),
-        color, 0.10);
-    }
 
     function render(w, h, pose, showTargets) {
       r.frame(w, h, camera(w, h));
@@ -542,12 +713,15 @@
       r.draw(meshes.strings, I, COLOR.string, 0.70);
 
       if (pose) {
-        // palm first, so the fingers read as coming out of it
-        const pm = M4.multiply(
-          M4.multiply(M4.translate(pose.palm), M4.rotateX(0.25)),
-          M4.scale({ x: 24, y: 16, z: 11 }));
-        r.draw(meshes.box, pm, COLOR.skin, 0.08);
-        for (const b of pose.bones) limb(b.a, b.b, b.r, COLOR.skin);
+        // One surface for the whole hand, re-swept only when it has moved.
+        const key = pose.bones.map(b =>
+          `${b.b.x.toFixed(1)},${b.b.y.toFixed(1)},${b.b.z.toFixed(1)}`).join('|');
+        if (key !== handKey) {
+          const hm = handMesh(pose);
+          r.upload(meshes.hand, hm.P, hm.N, hm.I);
+          handKey = key;
+        }
+        r.draw(meshes.hand, I, COLOR.skin, 0.09);
 
         if (showTargets !== false) {
           // The contacts themselves, so what the hand is aiming at is visible
@@ -633,5 +807,6 @@
   }
 
   global.Neck3D = { create, poseHand, twoBone, solveFinger, neckClearance, boneClearance,
-                    blendTargets, FINGERS, THUMB, boardMesh, backMesh, fretsMesh, stringsMesh };
+                    blendTargets, handMesh, smoothChain, FINGERS, THUMB,
+                    boardMesh, backMesh, fretsMesh, stringsMesh };
 })(window);
