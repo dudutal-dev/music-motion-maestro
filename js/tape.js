@@ -442,7 +442,14 @@
         g.direction = 'ltr';                       // a number, not a sentence
         // Under ten seconds it counts in tenths so it visibly moves; above
         // that a whole-second count is all anyone reads at a glance.
-        const left = Math.max(0, c.remaining);
+        /* Shown in the seconds the player will actually live through, not in
+           song seconds. The layout stays in song time — that is what the
+           chart and the analysis are in, and what can be checked — but a
+           countdown answers "how long until this happens", which is a
+           wall-clock question. At half speed a two-second chord really does
+           take four, and a timer that said two would be lying about the only
+           thing it is for. */
+        const left = Math.max(0, c.remaining) / (o.rate || 1);
         const txt = left < 10 ? left.toFixed(1) : String(Math.ceil(left));
         g.fillStyle = left <= 1 ? C.warn : C.accent;
         g.globalAlpha = left <= 1 ? 1 : 0.9;

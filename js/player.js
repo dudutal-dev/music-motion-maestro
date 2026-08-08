@@ -11,7 +11,12 @@
   let yt = null;             // YT.Player instance
   let ready = false;
   let apiLoading = false;
-  const listeners = { state: [], ready: [], time: [], ad: [] };
+  /* The channels anyone can listen on. `emit` indexes this directly, so a
+     channel that is emitted but not declared here throws — which is exactly
+     what adding `rate` without adding it here did. Declared, not created on
+     demand, so a typo in a channel name fails loudly instead of going
+     nowhere quietly. */
+  const listeners = { state: [], ready: [], time: [], ad: [], rate: [] };
 
   // smooth clock
   let anchorMedia = 0;       // media time at the last anchor
@@ -153,11 +158,22 @@
     emit('ad', v);
   }
 
+  /* How fast the song is playing, as a multiple of real time.
+     Slowing a song down for practice is not a display setting: it changes
+     what one second of wall clock is worth in song time, and this clock is
+     built on exactly that conversion. Left at 1 while the audio ran at a
+     half, the app would believe the song was twice as far along as it was —
+     re-anchoring would drag it back six times a second and the performer
+     would stutter between the two answers. For the silent practice track
+     there is nothing to re-anchor against at all, so it would simply be
+     wrong. */
+  let rate = 1;
+
   /** Interpolated media time — smooth at 60fps, re-anchored on drift. */
   function now() {
     if (!ready && !silent) return 0;
     if (!playing) return anchorMedia;
-    return anchorMedia + (performance.now() - anchorWall) / 1000;
+    return anchorMedia + ((performance.now() - anchorWall) / 1000) * rate;
   }
 
   function startLoop() {
@@ -215,6 +231,25 @@
       emit('state', -1, { playing, duration: songDur });
     },
     get silent() { return silent; },
+    get rate() { return rate; },
+    /**
+     * Play slower (or faster) without moving the position.
+     *
+     * The anchor is taken at the OLD rate before the new one applies —
+     * otherwise the elapsed wall time since the last anchor is re-valued at
+     * the new rate and the song jumps by however long that was.
+     */
+    setRate(r) {
+      const next = Math.max(0.25, Math.min(2, +r || 1));
+      if (next === rate) return rate;
+      anchor(now());
+      rate = next;
+      if (!silent && ready && yt.setPlaybackRate) {
+        try { yt.setPlaybackRate(next); } catch (e) { /* older embeds */ }
+      }
+      emit('rate', rate);
+      return rate;
+    },
     load(videoId, autoplay) {
       if (!ready || !videoId) return;
       silent = false;
@@ -222,6 +257,11 @@
       songDur = 0; songDurSure = false; setAd(false); anchor(0);
       if (autoplay === false) yt.cueVideoById(videoId);
       else yt.loadVideoById(videoId);
+      // Loading a video resets the embed's playback rate; the user's choice
+      // is a property of how they are practising, not of the track.
+      if (rate !== 1 && yt.setPlaybackRate) {
+        try { yt.setPlaybackRate(rate); } catch (e) { /* older embeds */ }
+      }
     },
     play() {
       if (silent) { anchor(anchorMedia); playing = true; emit('state', 1, { playing, duration: songDur }); return; }

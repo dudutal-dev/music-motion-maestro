@@ -406,8 +406,9 @@
         <p><b>זה השער.</b> בלי BPM ואקורדים הבמה תישאר ריקה — אין למה לסנכרן.</p>
         <p>ארבעה מסלולים, לפי מה שיש לך:</p>
         <ul class="guide-list">
-          <li><b>🔴 הקלט מהשיר · הכרטיסייה</b> — הכי מדויק. השיר מתנגן והאפליקציה
-            מקליטה את הקול של הכרטיסייה. <b>Chrome/Edge במחשב בלבד.</b>
+          <li><b>🔴 הקלט מהשיר · הכרטיסייה</b> — הכי מדויק. השיר מתנגן <b>כאן</b>,
+            בנגן של האפליקציה, והיא מקליטה את הקול של הכרטיסייה הזאת —
+            לא של כרטיסיית יוטיוב אחרת. <b>Chrome/Edge במחשב בלבד.</b>
             חובה לסמן "שתף גם את האודיו של הכרטיסייה" — זה הכשל הנפוץ ביותר.</li>
           <li><b>🎤 הקלט מהשיר · מיקרופון</b> — <b>עובד גם באייפון</b>. השיר מתנגן
             ברמקול והאפליקציה מקשיבה. קצב וסולם יוצאים טוב, אקורדים פחות.</li>
@@ -517,6 +518,21 @@
               <div class="scc-chord" id="scc-chord">—</div>
               <div class="scc-diagram" id="scc-diagram"></div>
               <div class="scc-hand" id="scc-hand"></div>
+            </div>` : ''}
+            ${analyzed ? `<div class="stage-transport">
+              <button class="tbtn" data-action="back10" aria-label="אחורה 10 שניות"
+                style="font-size:11px;font-weight:800">-10</button>
+              <button class="tbtn tbtn-play" data-action="toggle" aria-label="נגן / השהה"
+                >${P.playing ? icons.pause : icons.play}</button>
+              <button class="tbtn" data-action="fwd10" aria-label="קדימה 10 שניות"
+                style="font-size:11px;font-weight:800">+10</button>
+              <span class="time" data-time="cur">0:00</span>
+              <div class="bar" data-scrub><div class="bar-fill" data-scrub-fill style="width:0%">
+                <div class="bar-knob"></div></div></div>
+              <span class="time" data-time="dur">0:00</span>
+              <button class="tbtn tbtn-rate" data-action="rate"
+                aria-label="האט את הקצב לתרגול" title="האט את הקצב לתרגול"
+                >${rateLabel()}</button>
             </div>` : ''}
             ${analyzed ? `<div class="stage-hud">
               <span class="hud-pill">BPM <b id="hud-bpm">${Math.round(t.analysis.bpm)}</b></span>
@@ -1255,10 +1271,14 @@ python scripts/build_sync_map.py work/analysis.json --chords work/chords.json --
     const host = $('#stage');
     const t = state.currentTrackId ? Store.getTrack(state.currentTrackId) : null;
     if (!host || !t || !t.analysis || !t.analysis.bpm) { state.performer = null; return; }
-    // These are markup, not performer output, so carry them across the rebuild.
+    /* These are markup, not performer output, so carry them across the
+       rebuild. Anything added to the stage that is NOT rebuilt here has to be
+       on this list — the transport was not, and switching stage mode silently
+       deleted the only controls that work in full screen. */
     const hud = host.querySelector('.stage-hud');
     const exit = host.querySelector('.stage-exit');
     const card = host.querySelector('.stage-chordcard');
+    const transport = host.querySelector('.stage-transport');
     host.innerHTML = '';
 
     const neckMode = state.stageMode === 'neck' && stageChar() &&
@@ -1340,6 +1360,7 @@ python scripts/build_sync_map.py work/analysis.json --chords work/chords.json --
     if (hud) host.appendChild(hud);
     if (exit) host.appendChild(exit);
     if (card) host.appendChild(card);
+    if (transport) host.appendChild(transport);
 
     const sel = $('#stage-char');
     if (sel) sel.addEventListener('change', () => {
@@ -1601,7 +1622,8 @@ python scripts/build_sync_map.py work/analysis.json --chords work/chords.json --
     if (!cv || !cv.parentElement) return;
     const t = state.currentTrackId ? Store.getTrack(state.currentTrackId) : null;
     if (!t || !t.analysis) return;
-    try { Tape.draw(cv, t.analysis, time || 0); } catch (e) { /* a frame is not worth a crash */ }
+    try { Tape.draw(cv, t.analysis, time || 0, { rate: P.rate || 1 }); }
+    catch (e) { /* a frame is not worth a crash */ }
   }
 
   function drawNeckOverlay(chord, motion) {
@@ -1697,6 +1719,43 @@ python scripts/build_sync_map.py work/analysis.json --chords work/chords.json --
       n.classList.toggle('current', n.dataset.c === chord));
   }
 
+  /* Practice speeds. Down to a quarter, which is slow enough to place a
+     barre chord one finger at a time, and back up through the two steps most
+     people actually use. Nothing above 1: this is for learning a part, and a
+     song played fast teaches nothing a song played at speed does not. */
+  const RATES = [1, 0.75, 0.5, 0.25];
+  // "×0.5" reads the same either way round; "0.5x" does not, in Hebrew.
+  const rateLabel = () => '×' + (P.rate || 1);
+  function cycleRate() {
+    const i = RATES.indexOf(P.rate || 1);
+    const next = RATES[(i < 0 ? 0 : i + 1) % RATES.length];
+    P.setRate(next);
+    /* A practice track's click is the only sound it has, so it has to slow
+       down with the song — otherwise the metronome and the chart disagree
+       about the tempo and the click is worse than useless. */
+    const t = state.currentTrackId ? Store.getTrack(state.currentTrackId) : null;
+    if (t && !t.videoId && P.playing) { stopClick(); startClick(t); }
+    updateTransports();
+    toast(next === 1 ? 'קצב מלא' : `קצב ${rateLabel()} — לתרגול`);
+  }
+
+  /* Keeps every play button showing what pressing it will do. The player bar
+     redraws itself wholesale; the stage's transport is inside the stage and
+     must not be redrawn on every pause, so its icon is swapped in place. */
+  function updateTransports() {
+    const icon = P.playing ? icons.pause : icons.play;
+    document.querySelectorAll('.stage-transport .tbtn-play').forEach(b => {
+      if (b.innerHTML !== icon) b.innerHTML = icon;
+    });
+    const lab = rateLabel(), slowed = (P.rate || 1) !== 1;
+    document.querySelectorAll('.tbtn-rate').forEach(b => {
+      if (b.textContent !== lab) b.textContent = lab;
+      // Lit whenever the song is not at full speed, so a slowed take can
+      // never be mistaken for the app playing badly.
+      b.classList.toggle('on', slowed);
+    });
+  }
+
   /* ---------------- player bar ---------------- */
   function updatePlayerBar() {
     const t = state.currentTrackId ? Store.getTrack(state.currentTrackId) : null;
@@ -1723,10 +1782,10 @@ python scripts/build_sync_map.py work/analysis.json --chords work/chords.json --
           <button class="tbtn" data-action="next" aria-label="הבא">${icons.next}</button>
         </div>
         <div class="scrub">
-          <span class="time" id="t-cur">0:00</span>
-          <div class="bar" id="scrub"><div class="bar-fill" id="scrub-fill" style="width:0%">
+          <span class="time" id="t-cur" data-time="cur">0:00</span>
+          <div class="bar" id="scrub" data-scrub><div class="bar-fill" id="scrub-fill" data-scrub-fill style="width:0%">
             <div class="bar-knob"></div></div></div>
-          <span class="time" id="t-dur">0:00</span>
+          <span class="time" id="t-dur" data-time="dur">0:00</span>
         </div>
       </div>
       <div class="player-right">
@@ -1897,9 +1956,16 @@ python scripts/build_sync_map.py work/analysis.json --chords work/chords.json --
     sel.innerHTML = opts.map(([v, l]) => `<option value="${v}">${l}</option>`).join('');
 
     const sync = () => {
+      /* Say where the sound comes from before saying what to click.
+         People shared their YouTube tab, which is the sensible thing to do if
+         you believe that is where the song is. It is not: the song plays in
+         the player on this page, and the YouTube tab is not involved at all.
+         Once that is said, the rest of the instruction follows on its own. */
       hint.innerHTML = sel.value === 'tab'
-        ? 'כשייפתח חלון השיתוף: בחר <b>"כרטיסייה"</b> → את <b>הכרטיסייה הזאת</b> → ' +
-          'וסמן למטה <b>"שתף גם את האודיו של הכרטיסייה"</b>. בלי הסימון הזה לא ייקלט קול.'
+        ? '<b>השיר יתנגן כאן</b>, בנגן של האפליקציה — לא בכרטיסיית היוטיוב שלך; ' +
+          'אין צורך לפתוח אותה בכלל. כשייפתח חלון השיתוף בחר את ' +
+          '<b>הכרטיסייה הזאת</b> (היא תוצע ראשונה) וסמן למטה ' +
+          '<b>"שתף גם את האודיו של הכרטיסייה"</b>. בלי הסימון הזה לא ייקלט קול.'
         : 'השיר ינוגן ברמקול והאפליקציה תקשיב לו. <b>הגבר את העוצמה</b>, החזק את ' +
           'הטלפון קרוב, והימנע מרעש. פחות מדויק מקליטת כרטיסייה — ' +
           'הקצב והסולם יוצאים טוב, האקורדים פחות.';
@@ -1986,7 +2052,7 @@ python scripts/build_sync_map.py work/analysis.json --chords work/chords.json --
          so nothing plays into a recorder that is not listening yet. */
       status.textContent = source === 'mic'
         ? 'אשר גישה למיקרופון — השיר יתחיל מיד אחרי כן'
-        : 'בחר את הכרטיסייה הזאת וסמן "שתף גם את האודיו" — השיר יתחיל מיד אחרי כן';
+        : 'בחר את הכרטיסייה הזאת (לא את יוטיוב) וסמן "שתף גם את האודיו" — השיר יתחיל כאן מיד אחרי כן';
       const { segments } = await capture({
         seconds: secs,
         control: captureControl,
@@ -3073,6 +3139,7 @@ python scripts/extract_chords.py work/audio.wav --beats work/analysis.json --out
     if (a === 'prev') return neighbourTrack(-1);
     if (a === 'back10') return P.nudge(-10);
     if (a === 'fwd10') return P.nudge(10);
+    if (a === 'rate') return cycleRate();
     if (a === 'export') {
       // Reading the poster out of IndexedDB is asynchronous, so the file is
       // only built once it is actually in hand.
@@ -3234,7 +3301,9 @@ python scripts/extract_chords.py work/audio.wav --beats work/analysis.json --out
 
   function bindScrub() {
     document.addEventListener('pointerdown', e => {
-      const bar = e.target.closest('#scrub');
+      /* Any scrub bar, not just the player's. The stage has its own now, and
+         a second copy of this handler is a second set of rounding bugs. */
+      const bar = e.target.closest('[data-scrub]');
       if (!bar) return;
       const seek = ev => {
         const r = bar.getBoundingClientRect();
@@ -3290,7 +3359,7 @@ python scripts/extract_chords.py work/audio.wav --beats work/analysis.json --out
     window.addEventListener('resize', () => drawNeckOverlay(liveChord()));
 
     P.init('yt-mount');
-    P.on('state', () => { updatePlayerBar(); });
+    P.on('state', () => { updatePlayerBar(); updateTransports(); });
     /* An ad freezes the song clock, so the performer holds its last chord
        instead of playing to the ad. Without a word on screen that looks like
        the app has hung, so say what is happening. */
@@ -3301,10 +3370,16 @@ python scripts/extract_chords.py work/audio.wav --beats work/analysis.json --out
       if (on) toast('פרסומת מתנגנת — הנגינה תמשיך מעצמה כשהשיר יחזור');
     });
     P.on('time', (t, dur) => {
-      const cur = $('#t-cur'), du = $('#t-dur'), fill = $('#scrub-fill');
-      if (cur) cur.textContent = fmt(t);
-      if (du) du.textContent = fmt(dur);
-      if (fill && dur) fill.style.width = Math.min(100, (t / dur) * 100) + '%';
+      /* Every readout of the clock, wherever it is. There are two transports
+         now — the player bar and the stage's own — and they are two views of
+         one position, never two positions. */
+      const txt = fmt(t), dtxt = fmt(dur);
+      document.querySelectorAll('[data-time="cur"]').forEach(el => { el.textContent = txt; });
+      document.querySelectorAll('[data-time="dur"]').forEach(el => { el.textContent = dtxt; });
+      if (dur) {
+        const w = Math.min(100, (t / dur) * 100) + '%';
+        document.querySelectorAll('[data-scrub-fill]').forEach(el => { el.style.width = w; });
+      }
       syncFrame(t);
     });
   }

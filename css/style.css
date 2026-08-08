@@ -836,3 +836,53 @@ body.stage-focus .tape-stage { width: 100%; height: 100%; aspect-ratio: auto; bo
    they sat squarely on the first cell, and everything they report — the
    chord, the tempo — the sheet or the player bar is already saying. */
 .stage:has(.tape-stage) .stage-hud { display: none; }
+
+/* ---- transport on the stage itself ------------------------------------
+   The player bar is hidden in focus mode, which meant that going full screen
+   left no way to play, pause or seek at all — you could look at the stage and
+   not start it. This is the same transport, on the stage, present in both
+   modes and driven by the same actions, so there is one set of controls and
+   one clock behind them. */
+:root { --stage-transport-h: 54px; }
+.stage-transport {
+  position: absolute; left: 0; right: 0; bottom: 0;
+  height: var(--stage-transport-h);
+  display: flex; align-items: center; gap: 10px;
+  padding: 0 14px;
+  background: linear-gradient(to top, rgba(0,0,0,.82), rgba(0,0,0,.42) 60%, transparent);
+  backdrop-filter: blur(6px);
+  z-index: 3;
+}
+/* The seek buttons are signed numbers, not words: under RTL "-10" comes out
+   as "10-", which reads as nonsense rather than as a direction. */
+.stage-transport .tbtn { flex: none; direction: ltr; }
+.stage-transport .tbtn-play {
+  width: 38px; height: 38px;
+  background: var(--accent); color: #00201d; border: none;
+}
+.stage-transport .tbtn-play:hover { filter: brightness(1.08); }
+.stage-transport .time {
+  font-size: 11px; color: var(--text-2); font-variant-numeric: tabular-nums;
+  direction: ltr; flex: none; min-width: 34px; text-align: center;
+}
+.stage-transport .bar { flex: 1; min-width: 0; }
+body.stage-focus .stage-transport { height: 62px; padding: 0 22px; }
+
+/* The stage keeps the transport's height clear at the bottom rather than
+   letting it sit on the content. Shrinking the mode inside did not work: the
+   stage takes its height FROM that mode, so both shrank together and the
+   overlap came straight back. Reserving the space on the stage itself is the
+   fix, and it applies to every mode without any of them knowing. */
+.stage:has(.stage-transport) { padding-bottom: var(--stage-transport-h); }
+body.stage-focus .stage:has(.stage-transport) { padding-bottom: 62px; }
+
+/* The practice-speed button. Lit whenever the song is not at full speed, so
+   a deliberately slowed take can never be mistaken for the app playing
+   badly — the one thing a speed control must never be ambiguous about. */
+.stage-transport .tbtn-rate {
+  font-size: 12px; font-weight: 800; direction: ltr;
+  min-width: 42px; font-variant-numeric: tabular-nums;
+}
+.stage-transport .tbtn-rate.on {
+  background: var(--warn); color: #241600; border-color: transparent;
+}

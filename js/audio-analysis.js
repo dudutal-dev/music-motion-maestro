@@ -550,7 +550,24 @@
     try {
       stream = await navigator.mediaDevices.getDisplayMedia({
         video: true,               // required — the picker refuses audio-only
-        audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
+        audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+        /* Ask the picker for THIS tab, and only this tab.
+           The song does not play in the user's YouTube tab — it plays in the
+           player embedded in this page. Told to "share the tab", people quite
+           reasonably shared the YouTube tab they had open, where nothing was
+           playing, and recorded four minutes of silence. Then they pressed
+           play over there too and had two players running at two different
+           points in the same song.
+
+           The instructions already said "this tab". Instructions were the
+           wrong tool: preferCurrentTab makes the picker offer this tab first,
+           and selfBrowserSurface says it may be offered at all — Chrome
+           excludes the capturing tab by default, which is the very thing that
+           made the correct answer hard to find. */
+        preferCurrentTab: true,
+        selfBrowserSurface: 'include',
+        // The tab's own sound, not everything the machine is playing.
+        systemAudio: 'exclude'
       });
     } catch (e) {
       throw new Error(e && e.name === 'NotAllowedError'
@@ -637,6 +654,34 @@
     let rec = null, chunks = null, segAt = 0, segWall = 0, everOpened = false;
     const closing = [];
 
+    /* Listen to the take while it is being taken.
+       Recording is the one part of this app that cannot be checked afterwards
+       without wasting the user's time: a silent share produces a perfectly
+       valid file, and the only way to find out used to be to sit through the
+       whole song and then be told. So the level is watched live, and a take
+       with nothing in it is stopped within seconds of starting rather than
+       minutes.
+
+       Watching the track costs nothing that matters — an analyser node reads
+       the same stream the recorder is already consuming. */
+    let meter = null, meterBuf = null, meterCtx = null;
+    try {
+      meterCtx = new (global.AudioContext || global.webkitAudioContext)();
+      const src = meterCtx.createMediaStreamSource(new MediaStream([audio]));
+      meter = meterCtx.createAnalyser();
+      meter.fftSize = 1024;
+      src.connect(meter);
+      meterBuf = new Float32Array(meter.fftSize);
+    } catch (e) { meter = null; }
+    const closeMeter = () => {
+      if (meterCtx && meterCtx.close) { try { meterCtx.close(); } catch (e) { /* gone */ } }
+      meterCtx = null; meter = null;
+    };
+    let heardSomething = false, silentMs = 0, silentGiveUp = false;
+    /* Long enough that a quiet intro is not mistaken for a dead share, short
+       enough that nobody sits through a song for nothing. */
+    const SILENCE_LIMIT_MS = 7000;
+
     const openSeg = () => {
       if (rec) return;
       everOpened = true;
@@ -672,6 +717,7 @@
       finished = true;
       if (ticker) clearInterval(ticker);
       closeSeg();
+      closeMeter();
       audio.stop();
       resolveDone();
     };
@@ -696,15 +742,41 @@
        decides when a segment opens: the caller turns `wanted` on the instant
        the song starts, and every tick of delay past that is song the take
        never gets. */
+    let lastTick = Date.now();
     ticker = setInterval(() => {
-      const elapsed = (Date.now() - startedAt) / 1000;
+      const now = Date.now();
+      const dt = now - lastTick;
+      lastTick = now;
+      const elapsed = (now - startedAt) / 1000;
       if (wanted()) openSeg(); else closeSeg();
-      if (o.onTick) o.onTick(elapsed, limit);
+
+      /* Only count silence while we are actually recording something we want.
+         Time spent waiting for an ad to finish is not the share being dead. */
+      if (meter && !heardSomething && rec) {
+        meter.getFloatTimeDomainData(meterBuf);
+        let peak = 0;
+        for (let i = 0; i < meterBuf.length; i++) {
+          const v = meterBuf[i] < 0 ? -meterBuf[i] : meterBuf[i];
+          if (v > peak) peak = v;
+        }
+        if (peak > 0.0025) heardSomething = true;
+        else {
+          silentMs += dt;
+          if (silentMs > SILENCE_LIMIT_MS) { silentGiveUp = true; finish(); return; }
+        }
+      }
+
+      if (o.onTick) o.onTick(elapsed, limit, { heard: heardSomething });
       if (isDone(elapsed)) finish();
     }, 60);
 
     // Whatever ends the recording, every open segment has to be flushed first.
     await done;
+    if (silentGiveUp) throw new Error(
+      'לא נקלט שום קול בשבע השניות הראשונות, אז עצרתי במקום להקליט שיר שלם של ' +
+      'שקט. השיר מתנגן כאן, בנגן של האפליקציה — לא בכרטיסיית היוטיוב שלך. ' +
+      'בחלון השיתוף בחר את הכרטיסייה הזאת (היא מוצעת ראשונה), סמן ' +
+      '"שתף גם את האודיו של הכרטיסייה", וּודא שהווליום כאן לא מושתק.');
     const parts = (await Promise.all(closing)).filter(Boolean);
     // "Nothing was recorded" and "nothing but ads played" look the same from
     // here but need opposite advice, and the caller is the one that knows.
