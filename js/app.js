@@ -265,6 +265,25 @@
    * followed song A — the character fretted one song's chords over another
    * song's audio, in perfect sync with nothing.
    */
+  /**
+   * Repairs a track whose chords stop before the song does.
+   *
+   * Analyses saved before the progression was carried forward still end
+   * partway through, and re-analysing a four-minute song to fix that is a poor
+   * thing to ask. Extending on first use costs nothing and is persisted, so it
+   * happens once per track rather than on every render.
+   */
+  function ensureChordCoverage(t) {
+    const a = t && t.analysis;
+    if (!a || !a.bpm || !a.chords || !a.chords.length) return;
+    const songLen = Math.max(a.duration || 0, t.id === state.currentTrackId ? (P.duration || 0) : 0);
+    if (!songLen) return;
+    if (a.chords[a.chords.length - 1].end >= songLen - 0.5) return;
+    A.extendChords(a, songLen);
+    if (songLen > (a.duration || 0)) a.duration = +songLen.toFixed(2);
+    Store.updateTrack(t.id, { analysis: a });
+  }
+
   /** The character on stage, read fresh so later edits are always visible. */
   function stageChar() {
     return state.stageCharId ? Store.getCharacter(state.stageCharId) : null;
@@ -283,19 +302,25 @@
       const loaded = Store.state.tracks.find(t => t.videoId === P.videoId);
       if (loaded && (!cur || cur.videoId !== P.videoId)) {
         state.currentTrackId = loaded.id;
+        ensureChordCoverage(loaded);
         state.lastBeatIndex = -1;
         lastReadoutChord = null;
         return;
       }
     }
-    if (cur) return;
+    if (cur) { ensureChordCoverage(cur); return; }
 
     const first = Store.state.tracks.find(t => t.analysis && t.analysis.bpm) || Store.state.tracks[0];
     if (!first) return;
     state.currentTrackId = first.id;
+    ensureChordCoverage(first);
     state.lastBeatIndex = -1;
     lastReadoutChord = null;
-    P.load(first.videoId, false);   // cue, don't autoplay
+    // A practice track has no video, and load() ignores an empty id — walking
+    // straight to the stage after a reload would leave the player holding
+    // nothing, so pressing play did nothing at all.
+    if (first.videoId) P.load(first.videoId, false);   // cue, don't autoplay
+    else P.loadSilent((first.analysis && first.analysis.duration) || 0);
   }
 
   /**
@@ -490,6 +515,7 @@
               <span class="hud-pill">אקורד <b id="hud-chord">—</b></span>
               <span class="hud-pill">תיבה <b id="hud-bar">—</b></span>
               <span class="hud-pill" id="hud-section">—</span>
+              ${t.analysis.analysedTo ? `<span class="hud-pill" id="hud-src">מדוד</span>` : ''}
             </div>` : ''}
           </div>
         </div>
@@ -1392,6 +1418,19 @@ python scripts/build_sync_map.py work/analysis.json --chords work/chords.json --
     setHeroImage(chord);
     // The same fingering on the stage itself, which is all that survives into
     // focus mode — the side panel that used to carry it is out of the layout.
+    // Say plainly whether this chord was heard or carried over from the
+    // analysed part, so an inference is never mistaken for a reading.
+    const hs = $('#hud-src');
+    if (hs) {
+      const t2 = state.currentTrackId ? Store.getTrack(state.currentTrackId) : null;
+      const seg = t2 && t2.analysis ? A.chordAt(t2.analysis, P.time() || 0) : null;
+      const ext = !!(seg && seg.extended);
+      const label = ext ? 'משוער' : 'מדוד';
+      if (hs.textContent !== label) {
+        hs.textContent = label;
+        hs.style.color = ext ? 'var(--warn)' : '';
+      }
+    }
     const sc = $('#scc-chord'), sd = $('#scc-diagram'), sh = $('#scc-hand');
     if (sc) sc.textContent = chord;
     if (sd) sd.innerHTML = diagram;
@@ -1461,6 +1500,7 @@ python scripts/build_sync_map.py work/analysis.json --chords work/chords.json --
     state.lastBar = -1;
     state.loop = null;
     lastReadoutChord = null;
+    ensureChordCoverage(t);
     stopClick();
     if (t.videoId) {
       P.load(t.videoId, true);
@@ -1917,9 +1957,18 @@ python scripts/extract_chords.py work/audio.wav --beats work/analysis.json --out
     } catch (e) {
       return toast('ה-JSON לא תקין: ' + e.message, true);
     }
+    /* Carry the progression over the part of the song that was not analysed,
+       so the stage does not fall silent partway through a track that is still
+       playing. Marked as inference, not measurement. */
+    const songLen = Math.max(analysis.duration || 0, P.duration || 0);
+    A.extendChords(analysis, songLen);
+    if (songLen > (analysis.duration || 0)) analysis.duration = +songLen.toFixed(2);
+
     Store.updateTrack(id, { analysis });
     closeModal();
-    toast('הניתוח נשמר · ' + A.summaryLine(analysis));
+    toast(analysis.analysedTo
+      ? `הניתוח נשמר · נותח עד ${fmt(analysis.analysedTo)}, המשך הפרוגרסיה הושלם`
+      : 'הניתוח נשמר · ' + A.summaryLine(analysis));
     lastReadoutChord = null;
     render();
   }

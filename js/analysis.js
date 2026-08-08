@@ -230,7 +230,62 @@
     };
   }
 
+  /**
+   * Carries the progression across the part of the song that was not analysed.
+   *
+   * Recording a minute of a four-minute song leaves the last three minutes
+   * with no chords at all: the music plays on, chordAt returns null, and the
+   * performer has nothing to fret — the stage simply goes quiet while the song
+   * continues. Popular songs repeat, which is the assumption the guided mode
+   * has always made, so the analysed span is tiled forward to the end.
+   *
+   * This is inference, not measurement, so it is marked: `analysedTo` records
+   * where the real analysis stopped and every carried-over segment carries
+   * `extended`, which lets the UI say which is which instead of presenting a
+   * guess as a reading.
+   */
+  function extendChords(a, duration) {
+    const cs = a && a.chords;
+    if (!cs || !cs.length || !duration) return a;
+    const first = cs[0].start, last = cs[cs.length - 1].end;
+    const cycle = last - first;
+    if (cycle < 1 || last >= duration - 0.5) return a;
+
+    a.analysedTo = +last.toFixed(2);
+    const out = cs.slice();
+    for (let k = 1; first + k * cycle < duration; k++) {
+      for (const c of cs) {
+        const start = c.start + k * cycle;
+        if (start >= duration) break;
+        out.push({
+          start: +start.toFixed(3),
+          end: +Math.min(c.end + k * cycle, duration).toFixed(3),
+          chord: c.chord, extended: true
+        });
+      }
+      if (out.length > 4000) break;      // a guard, not a limit anyone should hit
+    }
+    a.chords = out;
+
+    // The beat grid and sections are arithmetic, so they can simply run on.
+    if (a.bpm) {
+      const beat = 60 / a.bpm, sig = a.timeSignature || 4;
+      const beats = [], downs = [];
+      for (let t = a.firstBeat || 0, i = 0; t < duration; t += beat, i++) {
+        beats.push(+t.toFixed(3));
+        if (i % sig === 0) downs.push(+t.toFixed(3));
+      }
+      a.beatTimes = beats; a.downbeats = downs;
+    }
+    if (a.sections && a.sections.length) {
+      const lastSec = a.sections[a.sections.length - 1];
+      if (lastSec.end < duration) lastSec.end = +duration.toFixed(2);
+    }
+    return a;
+  }
+
   global.Analysis = {
+    extendChords,
     emptyAnalysis, buildBeatGrid, fromProgression, fromSkillJson,
     chordAt, chordIndexAt, sectionAt, beatPhase, summaryLine, progressionOf, TapTempo
   };
