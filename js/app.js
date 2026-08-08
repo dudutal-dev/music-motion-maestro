@@ -2078,6 +2078,15 @@ python scripts/build_sync_map.py work/analysis.json --chords work/chords.json --
   function renderAutoResult(a, filename) {
     const prog = A.progressionOf(a);
     const conf = a.confidence || {};
+    /* A take the analyser could barely hear is the most common reason for a
+       result that looks wrong, and it is invisible from the chart: the chords
+       come out looking as definite as any others. Saying it here costs one
+       line and saves the user from concluding the app cannot hear music. */
+    const quiet = a.quiet ? `
+      <div class="hint" style="margin-top:8px;color:var(--warn)">
+        ההקלטה יצאה חלשה מאוד. הניתוח עדיין רץ, אבל התוצאה פחות אמינה —
+        אם היא נראית שגויה, בדוק שהקול של הכרטיסייה משותף ושהווליום גבוה,
+        והפעל שוב.</div>` : '';
     const badge = v => v >= .7 ? 'on' : '';
     const note = v => v >= .7 ? 'ביטחון גבוה' : v >= .45 ? 'ביטחון בינוני — כדאי לאמת' : 'ביטחון נמוך — בדוק ידנית';
     return `
@@ -2092,6 +2101,7 @@ python scripts/build_sync_map.py work/analysis.json --chords work/chords.json --
       </div>
       ${prog.length ? `<div class="next-chords">${prog.slice(0, 20).map(c =>
         `<span class="next-chord">${esc(c)}</span>`).join('')}</div>` : ''}
+      ${quiet}
       <div class="hint" style="margin-top:10px">
         זיהוי אקורדים הוא הערכה — במיקס צפוף הוא פחות מדויק. אפשר לתקן ידנית בלשונית "ניתוח מונחה".
       </div>`;

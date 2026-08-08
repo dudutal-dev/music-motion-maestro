@@ -148,9 +148,34 @@
       scores.push({ lag, s });
       if (s > best.score) best = { lag, score: s };
     }
-    if (!best.lag) return { bpm: 0, confidence: 0, beatLen: 0 };
+    /* A flat envelope correlates with itself at every lag equally, and every
+       score comes out zero — at which point "the best lag" is just the first
+       one tried. Reporting that as a tempo produced 198.8 BPM from silence. */
+    if (!best.lag || !(best.score > 0)) return { bpm: 0, confidence: 0, beatLen: 0 };
 
-    let bpm = 60 * envSr / best.lag;
+    /* The peak is at a whole number of frames, and a beat is not.
+       The envelope runs at sr/HOP — about 43 frames a second — so the only
+       beat lengths this loop can name are 1/43s apart. At 96 BPM the true lag
+       is 26.92 frames; the nearest whole lag, 27, is 95.71 BPM. That 0.3%
+       looks like nothing and is not, because the grid below is built by
+       repeated addition: the error is paid once per beat, all the way to the
+       end of the song. Measured on a 96 BPM song, the grid arrived 235ms late
+       by the end of eighty seconds, and a four-minute song would be a beat out.
+
+       An autocorrelation peak is locally parabolic, so the true maximum can
+       be read between the samples from the three points around it. */
+    const peak = scores.findIndex(x => x.lag === best.lag);
+    let lag = best.lag;
+    if (peak > 0 && peak < scores.length - 1) {
+      const a = scores[peak - 1].s, b0 = scores[peak].s, c = scores[peak + 1].s;
+      const den = a - 2 * b0 + c;
+      if (den < 0) {                              // a maximum, not a saddle
+        const d = 0.5 * (a - c) / den;
+        if (Math.abs(d) <= 0.5) lag = best.lag + d;
+      }
+    }
+
+    let bpm = 60 * envSr / lag;
     // Autocorrelation happily locks onto half or double time. Prefer the
     // candidate that lands in the range most music actually sits in.
     const alt = [];
@@ -283,8 +308,16 @@
       if (start >= chroma.length) break;
       const acc = new Array(12).fill(0);
       for (let f = start; f < end; f++) for (let i = 0; i < 12; i++) acc[i] += chroma[f][i];
-      const norm = Math.hypot(...acc) || 1;
-      for (let i = 0; i < 12; i++) acc[i] /= norm;
+      /* A beat with no energy in it does not get a chord. Dividing by the
+         `|| 1` fallback below turns a silent beat into a vector of zeros,
+         every template then scores exactly zero, and the first comparison
+         against -Infinity hands the beat to whichever chord is first in the
+         list while every later 0 > 0 leaves it there. That is not a close
+         call being resolved — it is a coin toss that always lands the same
+         way, and over a silent recording it lands that way every beat. */
+      const energy = Math.hypot(...acc);
+      if (!(energy > 1e-6)) { perBeat.push(null); continue; }
+      for (let i = 0; i < 12; i++) acc[i] /= energy;
       let best = { s: -Infinity, name: null };
       for (let k = 0; k < t.length; k++) {
         const tv = t[k], tn = Math.sqrt(3);
@@ -299,6 +332,9 @@
     const segs = [];
     let i = 0;
     while (i < perBeat.length) {
+      // Silent stretches carry no chord and are simply left out, so a gap in
+      // the chart means "nothing was playing here" rather than a guess.
+      if (perBeat[i] == null) { i++; continue; }
       let j = i;
       while (j + 1 < perBeat.length && perBeat[j + 1] === perBeat[i]) j++;
       const start = beatTimes[i];
@@ -339,6 +375,34 @@
     const SR = 22050, FRAME = 2048, HOP = 512;
     const { data, sr, duration } = await decodeToMono(file, SR);
     if (!data.length) throw new Error('הקובץ ריק או לא נתמך');
+
+    /* Is there anything in here at all?
+       This is the check whose absence produced the worst bug this app has
+       had. A tab shared without its sound — or a window or a screen, which
+       Chrome will not give audio for at all — still yields an audio track,
+       still records, and still arrives here as a perfectly valid file
+       containing silence. Everything downstream then behaves as though it
+       had heard something: the tempo estimator locks onto the shortest lag
+       it is allowed, the key comes out C major because a zero chroma
+       correlates with nothing, and every beat is labelled with whichever
+       chord happens to be first in the template list. The user is handed a
+       confident chart of one chord for four minutes.
+
+       Silence is not a hard analysis problem. It is a different situation,
+       and it needs saying rather than analysing. */
+    let peak = 0, sq = 0;
+    for (let i = 0; i < data.length; i++) {
+      const a = Math.abs(data[i]);
+      if (a > peak) peak = a;
+      sq += data[i] * data[i];
+    }
+    const level = Math.sqrt(sq / data.length);
+    // -70 dBFS. A usable take measured 0.0014 at one percent of full volume,
+    // so this sits well below anything that still carries a song.
+    if (level < 0.0003) throw new Error(
+      'ההקלטה יצאה שקטה — לא היה בה קול לנתח. בדרך כלל זה קורה כששיתפת חלון ' +
+      'או מסך במקום כרטיסייה (כרום נותן קול רק לכרטיסייה), או כששכחת לסמן ' +
+      '"שתף גם את האודיו של הכרטיסייה". ודא גם שהשיר באמת מתנגן ושהווליום לא מושתק.');
 
     p('מחשב עוצמות ואונסטים…');
     const { flux, rms, chroma, nFrames } = framePass(data, sr, FRAME, HOP);
@@ -404,6 +468,14 @@
       beatTimes, downbeats, sections, chords,
       energy: +energy.toFixed(3), valence: +valence.toFixed(3), mood,
       source: 'browser',
+      /* How loud the take was. Not a hard failure — a quiet recording can
+         still be analysed, and the mic route is quiet by nature — but the
+         difference between "the app is wrong" and "the app could barely hear
+         it" is one the user is entitled to know, and only this number can
+         tell them. -46 dBFS is about where a tab recorded through the wrong
+         source starts producing chords out of room tone. */
+      level: +level.toFixed(5),
+      quiet: level < 0.005,
       confidence: {
         tempo: +tempo.confidence.toFixed(3),
         key: +key.confidence.toFixed(3)
