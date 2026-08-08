@@ -805,3 +805,34 @@ body.stage-focus .neck-stage { width: 100%; height: 100%; aspect-ratio: auto; bo
   pointer-events: none;
 }
 body.stage-focus .gl-stage { width: 100%; height: 100%; aspect-ratio: auto; border-radius: 0; }
+
+/* ---- the chord strip -------------------------------------------------
+   The same box as the 3D neck, on purpose: the stage keeps its shape when
+   you switch modes, so nothing on the page moves under your cursor. The
+   canvas is sized in JS from this box, so the box owns the shape. */
+.tape-stage {
+  position: relative;
+  /* Not the 16/10 box the other modes use. This one is a page to read, and a
+     page wants the height it can get: the taller it is, the more of the song
+     is in front of you before it has to turn. It still leaves room for the
+     player bar and the page's own chrome. */
+  height: calc(100vh - var(--player-h) - 210px);
+  min-height: 300px;
+  overflow: hidden;
+  border-radius: var(--radius);
+  background:
+    radial-gradient(130% 100% at 32% 0%, rgba(0, 229, 208, .08), transparent 62%),
+    radial-gradient(120% 100% at 50% 0%, #14171c 0%, #08090b 70%);
+}
+@media (max-width: 900px) {
+  /* On a phone the sidebar is gone and the page is the whole width, so the
+     sheet can have almost all of the viewport. */
+  .tape-stage { height: calc(100vh - var(--player-h) - 150px); }
+}
+.tape-stage canvas { display: block; width: 100%; height: 100%; }
+body.stage-focus .tape-stage { width: 100%; height: 100%; aspect-ratio: auto; border-radius: 0; }
+
+/* The chord sheet is a reading view, so the stage's own pills come off it:
+   they sat squarely on the first cell, and everything they report — the
+   chord, the tempo — the sheet or the player bar is already saying. */
+.stage:has(.tape-stage) .stage-hud { display: none; }

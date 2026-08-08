@@ -882,10 +882,24 @@
      every finger number and the chord name on their sides. */
   const DIAGRAM_ASPECT = 0.8;          // height ÷ width
 
-  function chordDiagramSVG(name, size) {
+  /**
+   * Where every part of a chord diagram goes, as plain numbers.
+   *
+   * Split out from the SVG because there are now two things that draw this
+   * diagram — the chart, in SVG, and the chord strip on the stage, on a
+   * canvas — and two implementations of the same picture is two pictures
+   * waiting to disagree. Whichever way it is painted, the frets are in the
+   * same places.
+   *
+   * The layout, once: the neck lies along x with the nut at the RIGHT, the
+   * strings run across it with the low E on TOP, and the open and muted
+   * marks sit past the nut. That is the guitar as its player looks down at
+   * it, which is the whole reason it is drawn this way round.
+   */
+  function diagramGeometry(name, size) {
     const f = MM.guitarFingering(name);
     const W = size || 150, H = Math.round(W * DIAGRAM_ASPECT);
-    if (!f) return `<svg width="${W}" height="${H}"></svg>`;
+    if (!f) return null;
     const nStr = 6, nFret = 5;
     const padL = W * .06, padR = W * .18;       // the right pad holds the ○ / ✕
     const padTop = H * .11, padBot = H * .20;   // the name sits under the board
@@ -902,37 +916,67 @@
     const fretX = j => nutX - j * sx;           // fret wires, running left
     const dotX = r => nutX - (r + .5) * sx;     // the space between two wires
 
-    let s = `<svg class="fretboard-svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">`;
-    // nut / position marker
-    if (startFret === 1)
-      s += `<rect x="${nutX.toFixed(1)}" y="${(padTop - 3).toFixed(1)}" width="5" height="${(bh + 6).toFixed(1)}" rx="2" fill="#e8e8ee"/>`;
-    else
-      s += `<text x="${dotX(0).toFixed(1)}" y="${(padTop - 5).toFixed(1)}" fill="rgba(255,255,255,.6)" font-size="11" text-anchor="middle" font-weight="700">${startFret}</text>`;
-    for (let j = 0; j <= nFret; j++)
-      s += `<line x1="${fretX(j).toFixed(1)}" y1="${padTop.toFixed(1)}" x2="${fretX(j).toFixed(1)}" y2="${(padTop + bh).toFixed(1)}" stroke="rgba(255,255,255,.22)" stroke-width="1.2"/>`;
-    for (let i = 0; i < nStr; i++)
-      s += `<line x1="${fretX(nFret).toFixed(1)}" y1="${strY(i).toFixed(1)}" x2="${nutX.toFixed(1)}" y2="${strY(i).toFixed(1)}" stroke="rgba(255,255,255,.28)" stroke-width="1.2"/>`;
-    // barre — one finger laid across the strings, so it runs with them
-    if (f.barre) {
-      const r = f.baseFret - startFret;
-      s += `<rect x="${(dotX(r) - 7).toFixed(1)}" y="${(padTop - 6).toFixed(1)}" width="14" height="${(bh + 12).toFixed(1)}" rx="7" fill="#00e5d0" opacity=".92"/>`;
-    }
+    const fretLines = [], stringLines = [], dots = [], marks = [];
+    for (let j = 0; j <= nFret; j++) fretLines.push({ x: fretX(j), y1: padTop, y2: padTop + bh });
+    for (let i = 0; i < nStr; i++) stringLines.push({ y: strY(i), x1: fretX(nFret), x2: nutX });
+
     const markX = nutX + Math.min(14, padR * .6);
     f.shape.forEach((fr, i) => {
       const y = strY(i);
-      if (fr === 'x') s += `<text x="${markX.toFixed(1)}" y="${(y + 4).toFixed(1)}" fill="rgba(255,255,255,.5)" font-size="12" text-anchor="middle" font-weight="700">✕</text>`;
-      else if (fr === 0) s += `<circle cx="${markX.toFixed(1)}" cy="${y.toFixed(1)}" r="5" fill="none" stroke="#fff" stroke-width="1.8" opacity=".85"/>`;
-      else {
-        const r = fr - startFret;
-        if (r < 0 || r >= nFret) return;
-        const cx = dotX(r);
-        if (!(f.barre && fr === f.baseFret))
-          s += `<circle cx="${cx.toFixed(1)}" cy="${y.toFixed(1)}" r="${(Math.min(sx, sy) * .38).toFixed(1)}" fill="#00e5d0"/>`;
-        const fin = f.fingers[i];
-        if (fin > 0) s += `<text x="${cx.toFixed(1)}" y="${(y + 4).toFixed(1)}" fill="#00201d" font-size="11" text-anchor="middle" font-weight="800">${fin}</text>`;
-      }
+      if (fr === 'x') { marks.push({ x: markX, y, kind: 'muted' }); return; }
+      if (fr === 0) { marks.push({ x: markX, y, kind: 'open' }); return; }
+      const r = fr - startFret;
+      if (r < 0 || r >= nFret) return;
+      dots.push({ x: dotX(r), y, r: Math.min(sx, sy) * .38,
+                  finger: f.fingers[i] || 0,
+                  // A barred string is covered by the bar, so it gets a finger
+                  // number but no dot of its own.
+                  underBarre: !!(f.barre && fr === f.baseFret) });
     });
-    s += `<text x="${W / 2}" y="${H - 4}" fill="rgba(255,255,255,.75)" font-size="13" text-anchor="middle" font-weight="800">${name}</text>`;
+
+    return {
+      name, W, H, nutX, padTop, bh, bw, sx, sy, startFret, nStr, nFret,
+      nut: startFret === 1 ? { x: nutX, y: padTop - 3, w: 5, h: bh + 6 } : null,
+      position: startFret === 1 ? null
+        : { x: dotX(0), y: padTop - 5, text: String(startFret) },
+      barre: f.barre
+        ? { x: dotX(f.baseFret - startFret) - 7, y: padTop - 6, w: 14, h: bh + 12, r: 7 }
+        : null,
+      fretLines, stringLines, dots, marks, labelY: H - 4
+    };
+  }
+
+  function chordDiagramSVG(name, size) {
+    const W = size || 150, H = Math.round(W * DIAGRAM_ASPECT);
+    const d = diagramGeometry(name, size);
+    if (!d) return `<svg width="${W}" height="${H}"></svg>`;
+
+    let s = `<svg class="fretboard-svg" width="${d.W}" height="${d.H}" viewBox="0 0 ${d.W} ${d.H}">`;
+    // nut / position marker
+    if (d.nut)
+      s += `<rect x="${d.nut.x.toFixed(1)}" y="${d.nut.y.toFixed(1)}" width="5" height="${d.nut.h.toFixed(1)}" rx="2" fill="#e8e8ee"/>`;
+    else
+      s += `<text x="${d.position.x.toFixed(1)}" y="${d.position.y.toFixed(1)}" fill="rgba(255,255,255,.6)" font-size="11" text-anchor="middle" font-weight="700">${d.position.text}</text>`;
+    for (const l of d.fretLines)
+      s += `<line x1="${l.x.toFixed(1)}" y1="${l.y1.toFixed(1)}" x2="${l.x.toFixed(1)}" y2="${l.y2.toFixed(1)}" stroke="rgba(255,255,255,.22)" stroke-width="1.2"/>`;
+    for (const l of d.stringLines)
+      s += `<line x1="${l.x1.toFixed(1)}" y1="${l.y.toFixed(1)}" x2="${l.x2.toFixed(1)}" y2="${l.y.toFixed(1)}" stroke="rgba(255,255,255,.28)" stroke-width="1.2"/>`;
+    // barre — one finger laid across the strings, so it runs with them
+    if (d.barre)
+      s += `<rect x="${d.barre.x.toFixed(1)}" y="${d.barre.y.toFixed(1)}" width="${d.barre.w}" height="${d.barre.h.toFixed(1)}" rx="${d.barre.r}" fill="#00e5d0" opacity=".92"/>`;
+    for (const m of d.marks) {
+      if (m.kind === 'muted')
+        s += `<text x="${m.x.toFixed(1)}" y="${(m.y + 4).toFixed(1)}" fill="rgba(255,255,255,.5)" font-size="12" text-anchor="middle" font-weight="700">✕</text>`;
+      else
+        s += `<circle cx="${m.x.toFixed(1)}" cy="${m.y.toFixed(1)}" r="5" fill="none" stroke="#fff" stroke-width="1.8" opacity=".85"/>`;
+    }
+    for (const dot of d.dots) {
+      if (!dot.underBarre)
+        s += `<circle cx="${dot.x.toFixed(1)}" cy="${dot.y.toFixed(1)}" r="${dot.r.toFixed(1)}" fill="#00e5d0"/>`;
+      if (dot.finger > 0)
+        s += `<text x="${dot.x.toFixed(1)}" y="${(dot.y + 4).toFixed(1)}" fill="#00201d" font-size="11" text-anchor="middle" font-weight="800">${dot.finger}</text>`;
+    }
+    s += `<text x="${d.W / 2}" y="${d.labelY}" fill="rgba(255,255,255,.75)" font-size="13" text-anchor="middle" font-weight="800">${name}</text>`;
     return s + '</svg>';
   }
 
@@ -971,5 +1015,5 @@
 
   // Exported so callers that size a box around a diagram — the PNG export and
   // the poster burn-in — cannot drift out of step with the drawing itself.
-  global.Performer = { create, chordDiagramSVG, keyboardDiagramSVG, DIAGRAM_ASPECT };
+  global.Performer = { create, chordDiagramSVG, keyboardDiagramSVG, diagramGeometry, DIAGRAM_ASPECT };
 })(window);

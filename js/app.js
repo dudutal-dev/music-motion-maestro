@@ -543,6 +543,7 @@
               <button class="chip ${state.stageMode === 'neck' ? 'active' : ''}" data-mode="neck"
                 ${stageChar() && stageChar().portrait && stageChar().neck ? '' : 'disabled'}>🎯 אצבעות על התמונה</button>
               <button class="chip ${state.stageMode === 'gl' ? 'active' : ''}" data-mode="gl">🧊 צוואר תלת־ממד</button>
+              <button class="chip ${state.stageMode === 'tape' ? 'active' : ''}" data-mode="tape">📊 ציר האקורדים</button>
             </div>
             ${(() => {
               const c = stageChar();
@@ -1275,6 +1276,19 @@ python scripts/build_sync_map.py work/analysis.json --chords work/chords.json --
         <div class="gl-hint" id="gl-hint">גרור כדי לסובב</div>`;
       host.appendChild(wrap);
       startGl(wrap.querySelector('#gl-canvas'));
+    } else if (state.stageMode === 'tape') {
+      /* The song laid out along time, moving past a fixed playhead. The only
+         mode that shows what is COMING — every other one shows the present
+         moment, which is already too late to prepare for. It needs no
+         character and no calibration, so it is the one view that works for
+         any analysed track. */
+      state.performer = null;
+      const wrap = document.createElement('div');
+      wrap.className = 'tape-stage';
+      wrap.innerHTML = '<canvas id="tape-canvas"></canvas>';
+      host.appendChild(wrap);
+      Tape.forgetColours();
+      requestAnimationFrame(() => drawTape(P.time || 0));
     } else if (neckMode) {
       /* The picture is the performer and stays exactly as it was generated;
          only the fingering is drawn over it, in the place the calibration
@@ -1364,6 +1378,7 @@ python scripts/build_sync_map.py work/analysis.json --chords work/chords.json --
     const energy = sec ? ({ low: .35, mid: .62, high: .95 }[sec.label] || .6) : .6;
 
     if (state.stageMode === 'gl') drawGl(chord);
+    if (state.stageMode === 'tape') drawTape(time);
     if (state.stageMode === 'neck') {
       /* The strumming hand has to be redrawn every frame — it is the thing
          that moves between chord changes, and without it a chord that has
@@ -1572,6 +1587,23 @@ python scripts/build_sync_map.py work/analysis.json --chords work/chords.json --
    * natural size, because `object-fit: contain` leaves bars at the sides on
    * some shapes and the marks have to sit on the picture, not on the box.
    */
+  /**
+   * The chord strip, repainted every frame.
+   *
+   * Cheap enough to redraw whole rather than diff: it is a few dozen
+   * rectangles, and the thing it is showing — the playhead sliding between
+   * chords — changes on every single frame anyway, so there is nothing to
+   * cache. Drawn straight from song time, like everything else on the stage,
+   * so it cannot drift away from what is sounding.
+   */
+  function drawTape(time) {
+    const cv = $('#tape-canvas');
+    if (!cv || !cv.parentElement) return;
+    const t = state.currentTrackId ? Store.getTrack(state.currentTrackId) : null;
+    if (!t || !t.analysis) return;
+    try { Tape.draw(cv, t.analysis, time || 0); } catch (e) { /* a frame is not worth a crash */ }
+  }
+
   function drawNeckOverlay(chord, motion) {
     const img = $('#neck-stage-img'), cv = $('#neck-stage-cv');
     if (!img || !cv) return;
