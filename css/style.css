@@ -762,3 +762,26 @@ body.stage-focus .stage-hud {
   .player { padding-bottom: env(safe-area-inset-bottom); }
   .sidebar { padding-bottom: calc(16px + env(safe-area-inset-bottom)); }
 }
+
+/* ---------- fingering drawn onto the character's own photograph ----------
+   The picture is never cropped or stretched: the overlay has to land on the
+   guitar in it, so the image keeps its own shape and the canvas covers the
+   same box. */
+.neck-stage {
+  position: relative;
+  aspect-ratio: 16/10;
+  overflow: hidden;
+  background: #000;
+  border-radius: var(--radius);
+}
+.neck-stage img {
+  position: absolute; inset: 0;
+  width: 100%; height: 100%;
+  object-fit: contain;
+  display: block;
+}
+.neck-stage canvas {
+  position: absolute; inset: 0;
+  pointer-events: none;
+}
+body.stage-focus .neck-stage { width: 100%; height: 100%; aspect-ratio: auto; border-radius: 0; }

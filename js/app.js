@@ -537,10 +537,22 @@
             <div class="panel-body">
             <h3>תצוגה</h3>
             <div class="chips">
-              <button class="chip ${state.stageMode !== 'hero' ? 'active' : ''}" data-mode="anim">🎬 אנימציה</button>
+              <button class="chip ${state.stageMode === 'anim' ? 'active' : ''}" data-mode="anim">🎬 אנימציה</button>
               <button class="chip ${state.stageMode === 'hero' ? 'active' : ''}" data-mode="hero"
                 ${stageChar() && stageChar().portrait ? '' : 'disabled'}>🖼️ דמות ריאליסטית</button>
+              <button class="chip ${state.stageMode === 'neck' ? 'active' : ''}" data-mode="neck"
+                ${stageChar() && stageChar().portrait && stageChar().neck ? '' : 'disabled'}>🎯 אצבעות על התמונה</button>
             </div>
+            ${(() => {
+              const c = stageChar();
+              if (!c || !c.portrait) return '';
+              if (c.neck) return `<div class="hint" style="margin-top:9px">
+                "אצבעות על התמונה" מצייר את האצבוע המדויק על הגיטרה שבתמונה שלך —
+                הדמות נשארת התמונה, רק הסימונים זזים לפי השיר.</div>`;
+              return `<div class="hint" style="margin-top:9px">
+                כדי להפעיל "אצבעות על התמונה" צריך לכייל פעם אחת איפה הגיטרה נמצאת בתמונה —
+                בעריכת הדמות, כפתור "כייל את הצוואר".</div>`;
+            })()}
             ${(() => {
               // In realistic mode the poster supplies a real photo per chord.
               // Say how many are in play, so a still hero is never a mystery.
@@ -1247,8 +1259,30 @@ python scripts/build_sync_map.py work/analysis.json --chords work/chords.json --
     const card = host.querySelector('.stage-chordcard');
     host.innerHTML = '';
 
+    const neckMode = state.stageMode === 'neck' && stageChar() &&
+                     stageChar().portrait && Neck.isCalibrated(stageChar().neck);
     const heroMode = state.stageMode === 'hero' && stageChar() && stageChar().portrait;
-    if (heroMode) {
+    if (neckMode) {
+      /* The picture is the performer and stays exactly as it was generated;
+         only the fingering is drawn over it, in the place the calibration
+         says the guitar actually is. Nothing here is an approximation of the
+         look — the look is a photograph — and nothing is an approximation of
+         the fingering either. */
+      state.performer = null;
+      const wrap = document.createElement('div');
+      wrap.className = 'neck-stage';
+      wrap.innerHTML =
+        `<img id="neck-stage-img" src="${stageChar().portrait}" alt="">
+         <canvas id="neck-stage-cv"></canvas>`;
+      host.appendChild(wrap);
+      // The overlay is normally repainted when the chord changes, which is not
+      // enough on the way in: the picture has to be laid out before anything
+      // can be drawn on it.
+      const im = wrap.querySelector('#neck-stage-img');
+      const first = () => drawNeckOverlay(liveChord());
+      if (im.complete && im.naturalWidth) requestAnimationFrame(first);
+      else im.addEventListener('load', first);
+    } else if (heroMode) {
       // The realistic render is the visual; the fingering stays exact in the
       // overlay, so you get the photoreal look without losing the accuracy.
       state.performer = null;
@@ -1397,6 +1431,50 @@ python scripts/build_sync_map.py work/analysis.json --chords work/chords.json --
     }
   }
 
+  /** Whatever chord the song is on right now, or null between analyses. */
+  function liveChord() {
+    const t = state.currentTrackId ? Store.getTrack(state.currentTrackId) : null;
+    const seg = t && t.analysis ? A.chordAt(t.analysis, P.time() || 0) : null;
+    return seg ? seg.chord : null;
+  }
+
+  /**
+   * Paints the fingering onto the character's photograph.
+   *
+   * Sized from the picture as it is actually laid out rather than from its
+   * natural size, because `object-fit: contain` leaves bars at the sides on
+   * some shapes and the marks have to sit on the picture, not on the box.
+   */
+  function drawNeckOverlay(chord) {
+    const img = $('#neck-stage-img'), cv = $('#neck-stage-cv');
+    if (!img || !cv) return;
+    const c = stageChar();
+    if (!c || !Neck.isCalibrated(c.neck)) return;
+    const host = cv.parentElement.getBoundingClientRect();
+    const nw = img.naturalWidth, nh = img.naturalHeight;
+    if (!nw || !nh || !host.width) return;
+    // where `contain` actually put the picture inside the box
+    const k = Math.min(host.width / nw, host.height / nh);
+    const w = nw * k, h = nh * k;
+    const ox = (host.width - w) / 2, oy = (host.height - h) / 2;
+
+    if (cv.width !== Math.round(host.width * devicePixelRatio) ||
+        cv.height !== Math.round(host.height * devicePixelRatio)) {
+      cv.width = Math.round(host.width * devicePixelRatio);
+      cv.height = Math.round(host.height * devicePixelRatio);
+      cv.style.width = host.width + 'px';
+      cv.style.height = host.height + 'px';
+    }
+    const ctx = cv.getContext('2d');
+    ctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
+    ctx.clearRect(0, 0, host.width, host.height);
+    ctx.save();
+    ctx.translate(ox, oy);
+    const f = chord ? MM.guitarFingering(chord) : null;
+    Neck.draw(ctx, scaleCal(c.neck, w, h), f, { scale: Math.max(w, h) });
+    ctx.restore();
+  }
+
   let lastReadoutChord = null;
   function updateHandReadout(chord) {
     if (chord === lastReadoutChord) return;
@@ -1425,6 +1503,7 @@ python scripts/build_sync_map.py work/analysis.json --chords work/chords.json --
     if (hd) hd.innerHTML = diagram;
     if (hc) hc.textContent = chord;
     setHeroImage(chord);
+    drawNeckOverlay(chord);
     // The same fingering on the stage itself, which is all that survives into
     // focus mode — the side panel that used to carry it is out of the layout.
     // Say plainly whether this chord was heard or carried over from the
@@ -2140,9 +2219,13 @@ python scripts/extract_chords.py work/audio.wav --beats work/analysis.json --out
             <img id="c-portrait-prev" src="${c.portrait || ''}"
               style="width:96px;height:120px;object-fit:cover;border-radius:10px;border:1px solid var(--line);background:var(--panel-2);${c.portrait ? '' : 'display:none'}">
             <button class="btn btn-sm" data-action="pick-portrait">בחר תמונה</button>
+            <button class="btn btn-sm" data-action="calibrate-neck" ${c.portrait ? '' : 'disabled'}>
+              <span id="c-neck-label">${c.neck ? '✓ הצוואר מכויל — כייל מחדש' : 'כייל את הצוואר'}</span></button>
             ${c.portrait ? '<button class="btn btn-sm btn-ghost" data-action="clear-portrait" style="color:var(--bad)">הסר</button>' : ''}
           </div>
-          <div class="hint">אחרי שיצרת את ה-hero בכלי חיצוני — צרף אותו כאן. הוא יופיע על הדמות ויוכל לעלות לבמה.</div></div>
+          <div class="hint">אחרי שיצרת את ה-hero בכלי חיצוני — צרף אותו כאן. הוא יופיע על הדמות ויוכל לעלות לבמה.
+            <b>כיול הצוואר</b> מסמן על התמונה איפה הגיטרה נמצאת, וכך האפליקציה יכולה לצייר את
+            האצבעות במקום הנכון עליה — הדמות נשארת התמונה שלך, רק הסימונים משתנים.</div></div>
       </div>`,
       `<button class="btn btn-primary" data-action="save-char" ${id ? `data-id="${id}"` : ''}>שמור דמות</button>
        ${id ? `<button class="btn" data-action="char-brief" data-id="${id}">תדריך דמות</button>` : ''}
@@ -2150,6 +2233,8 @@ python scripts/extract_chords.py work/audio.wav --beats work/analysis.json --out
        <button class="btn btn-ghost" data-action="close-modal">ביטול</button>`);
 
     pendingPortrait = c.portrait || null;
+    pendingNeck = c.neck || null;
+    charModalId = id || null;
     const styleSel = $('#c-style');
     const syncPhotoreal = () => {
       const on = CH.isPhotoreal({ style: styleSel.value });
@@ -2160,6 +2245,176 @@ python scripts/extract_chords.py work/audio.wav --beats work/analysis.json --out
   }
 
   let pendingPortrait = null;
+  let pendingNeck = null;
+
+  /* Opening a modal closes whatever was open, so stepping out to calibrate
+     the neck would throw away everything typed into the character form. The
+     form is carried across and put back instead. */
+  let charModalId = null, charDraft = null;
+  const CHAR_FIELDS = ['c-name', 'c-instrument', 'c-style', 'c-desc', 'c-outfit',
+    'c-camera', 'c-lighting', 'c-backdrop', 'c-skin', 'c-palette', 'c-world'];
+  function snapshotCharForm() {
+    const v = {};
+    CHAR_FIELDS.forEach(k => { const el = $('#' + k); if (el) v[k] = el.value; });
+    return v;
+  }
+  function restoreCharForm(v) {
+    if (!v) return;
+    CHAR_FIELDS.forEach(k => {
+      const el = $('#' + k);
+      if (el && v[k] != null) {
+        el.value = v[k];
+        // the style field drives which other fields are shown
+        if (k === 'c-style') el.dispatchEvent(new Event('change'));
+      }
+    });
+  }
+
+  /* ---------------- neck calibration ----------------
+     Marking three points on the photograph is all it takes to know where
+     every string and fret falls on it — but only the person looking at the
+     picture can say where they are, so this is a short guided task rather
+     than something the app can work out on its own. The fret ladder drawn
+     on top is the check: if it lands on the frets in the photo, it is right,
+     and nobody has to take the app's word for it. */
+  const NECK_STEPS = [
+    { key: 'nut', label: 'ה-nut', hint: 'הקצה העליון של הצוואר — הפס שבו הפרטים מתחילים, ליד ראש הגיטרה.' },
+    { key: 'twelfth', label: 'פרט 12', hint: 'אמצע המיתר. בדרך כלל מסומן בשתי נקודות על הצוואר, או נקודה גדולה אחת.' },
+    { key: 'bridge', label: 'הגשר', hint: 'המקום שבו המיתרים נתפסים בגוף הגיטרה.' }
+  ];
+  let neckDraft = null, neckStep = 0;
+
+  function calibrateNeckModal() {
+    const src = pendingPortrait;
+    if (!src) return toast('צרף קודם תמונה לדמות', true);
+    neckDraft = Object.assign({ wNut: 0.012, w12: 0.018, flip: false }, pendingNeck || {});
+    neckStep = pendingNeck ? NECK_STEPS.length : 0;
+
+    modal('כיול צוואר הגיטרה', `
+      <div class="panel-desc" style="margin-bottom:14px">
+        סמן שלוש נקודות על התמונה. הפרספקטיבה בצילום דוחסת את הצוואר, ולכן
+        <b>פרט 12 הוא ההכרחי</b> — בלעדיו הסימונים יסטו יותר ויותר ככל שעולים בצוואר.
+      </div>
+      <div id="neck-step" class="hand-readout" style="margin-bottom:12px"></div>
+      <div id="neck-canvas-wrap" style="position:relative;max-width:100%;margin-bottom:14px;
+           border:1px solid var(--line);border-radius:10px;overflow:hidden;background:#000">
+        <img id="neck-img" src="${src}" alt="" style="width:100%;display:block">
+        <canvas id="neck-cv" style="position:absolute;inset:0;width:100%;height:100%;cursor:crosshair"></canvas>
+      </div>
+      <div id="neck-tune" style="display:none">
+        <div class="field"><label>רוחב הצוואר ליד ה-nut <span id="neck-wn"></span></label>
+          <input id="neck-wnut" type="range" min="4" max="40" step="1"></div>
+        <div class="field"><label>רוחב הצוואר בפרט 12 <span id="neck-w12"></span></label>
+          <input id="neck-w12r" type="range" min="4" max="60" step="1"></div>
+        <label style="display:flex;gap:8px;align-items:center;font-size:14px;margin-bottom:10px">
+          <input id="neck-flip" type="checkbox"> החלף צד מיתרים (מי הנמוך בצד השני)</label>
+        <div class="field"><label>אקורד לבדיקה</label>
+          <select id="neck-test">${MM.CHORD_NAMES.map(n => `<option>${n}</option>`).join('')}</select></div>
+        <div class="hint">הסולם הלבן צריך לשבת על הפרטים האמיתיים בתמונה, והקו הבהיר על פרט 12.
+          לחיצה נוספת על התמונה מזיזה את הנקודה הקרובה ביותר, אז אפשר לתקן בלי להתחיל מחדש.
+          <br><b>שים לב:</b> בגיטרה שנוצרה ב-AI הפרטים לא תמיד מצוירים במרווחים פיזיקליים.
+          במקרה כזה גרור את שלוש הנקודות עד שהסולם יושב על הפרטים שרואים בתמונה —
+          זה מה שקובע, ולא המיקום האנטומי המדויק שלהן.</div>
+      </div>`,
+      `<button class="btn btn-primary" data-action="neck-save" id="neck-save" disabled>שמור כיול</button>
+       <button class="btn" data-action="neck-restart">התחל מחדש</button>
+       <button class="btn btn-ghost" data-action="neck-cancel">ביטול</button>`);
+
+    const img = $('#neck-img'), cv = $('#neck-cv');
+    const paint = () => {
+      const r = img.getBoundingClientRect();
+      if (!r.width) return;
+      cv.width = r.width * devicePixelRatio;
+      cv.height = r.height * devicePixelRatio;
+      const ctx = cv.getContext('2d');
+      /* Everything is drawn in CSS pixels rather than in 0..1: the picture is
+         not square, so a circle drawn in fractions would come out an ellipse.
+         The calibration is converted to pixels for the same reason. */
+      ctx.setTransform(cv.width / r.width, 0, 0, cv.height / r.height, 0, 0);
+      ctx.clearRect(0, 0, r.width, r.height);
+
+      if (Neck.isCalibrated(neckDraft)) {
+        const f = MM.guitarFingering(($('#neck-test') && $('#neck-test').value) || 'C');
+        Neck.draw(ctx, scaleCal(neckDraft, r.width, r.height), f,
+          { scale: Math.max(r.width, r.height), ladder: true });
+      }
+
+      // the marks themselves, on top, so they can always be seen and moved
+      NECK_STEPS.forEach((st, i) => {
+        const q = neckDraft[st.key];
+        if (!q) return;
+        ctx.save();
+        ctx.fillStyle = i === 1 ? '#ffd166' : '#00e5d0';
+        ctx.strokeStyle = 'rgba(0,0,0,.65)';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(q.x * r.width, q.y * r.height, 6, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+        ctx.restore();
+      });
+      const done = neckStep >= NECK_STEPS.length;
+      $('#neck-save').disabled = !Neck.isCalibrated(neckDraft);
+      $('#neck-tune').style.display = done ? '' : 'none';
+      $('#neck-step').innerHTML = done
+        ? 'שלוש הנקודות סומנו. כוונן את רוחב הצוואר עד שהסולם יושב על הפרטים בתמונה.'
+        : `<b>${neckStep + 1}/3 — לחץ על ${NECK_STEPS[neckStep].label}</b><br>${NECK_STEPS[neckStep].hint}`;
+    };
+    neckPaint = paint;
+
+    cv.addEventListener('click', (e) => {
+      const r = cv.getBoundingClientRect();
+      const q = { x: +((e.clientX - r.left) / r.width).toFixed(5), y: +((e.clientY - r.top) / r.height).toFixed(5) };
+      if (neckStep < NECK_STEPS.length) {
+        neckDraft[NECK_STEPS[neckStep].key] = q;
+        neckStep++;
+      } else {
+        // Past the guided pass, a click re-marks whichever point is nearest,
+        // so one misplaced mark does not mean starting over.
+        let best = null, bd = 1e9;
+        for (const st of NECK_STEPS) {
+          const p2 = neckDraft[st.key];
+          if (!p2) continue;
+          const d = Math.hypot(p2.x - q.x, p2.y - q.y);
+          if (d < bd) { bd = d; best = st.key; }
+        }
+        if (best) neckDraft[best] = q;
+      }
+      paint();
+    });
+
+    const wn = $('#neck-wnut'), w12 = $('#neck-w12r'), flip = $('#neck-flip');
+    wn.value = Math.round(neckDraft.wNut * 1000);
+    w12.value = Math.round(neckDraft.w12 * 1000);
+    flip.checked = !!neckDraft.flip;
+    const syncTune = () => {
+      neckDraft.wNut = +wn.value / 1000;
+      neckDraft.w12 = +w12.value / 1000;
+      neckDraft.flip = flip.checked;
+      $('#neck-wn').textContent = wn.value;
+      $('#neck-w12').textContent = w12.value;
+      paint();
+    };
+    [wn, w12, flip].forEach(el => el.addEventListener('input', syncTune));
+    $('#neck-test').addEventListener('change', paint);
+    syncTune();
+    if (img.complete) paint(); else img.onload = paint;
+    window.addEventListener('resize', paint);
+  }
+  let neckPaint = null;
+
+  /**
+   * The calibration is stored as fractions of the image; a canvas drawn in
+   * pixels needs them in pixels, and the two axes scale differently.
+   */
+  function scaleCal(cal, w, h) {
+    const m = q => ({ x: q.x * w, y: q.y * h });
+    const px = Math.max(w, h);
+    return {
+      nut: m(cal.nut), bridge: m(cal.bridge), twelfth: m(cal.twelfth),
+      wNut: cal.wNut * px, w12: cal.w12 * px, flip: cal.flip
+    };
+  }
 
   /**
    * Cuts the backdrop away from a generated frame.
@@ -2291,7 +2546,10 @@ python scripts/extract_chords.py work/audio.wav --beats work/analysis.json --out
       skin: $('#c-skin').value,
       palette: $('#c-palette').value,
       world: $('#c-world').value.trim(),
-      portrait: pendingPortrait
+      portrait: pendingPortrait,
+      // The calibration describes one particular photograph, so it travels
+      // with it and is dropped the moment the photograph is replaced.
+      neck: pendingPortrait ? (pendingNeck || null) : null
     };
     if (id) Store.updateCharacter(id, data); else Store.addCharacter(data);
     if (!Store.save()) return toast('אין מקום בדפדפן — הסר תמונה או מחק דמות', true);
@@ -2426,6 +2684,29 @@ python scripts/extract_chords.py work/audio.wav --beats work/analysis.json --out
       if (confirm('למחוק את הדמות?')) { Store.removeCharacter(act.dataset.id); closeModal(); render(); }
       return;
     }
+    if (a === 'calibrate-neck') {
+      charDraft = snapshotCharForm();
+      return calibrateNeckModal();
+    }
+    if (a === 'neck-restart') {
+      neckStep = 0;
+      neckDraft = { wNut: neckDraft.wNut, w12: neckDraft.w12, flip: neckDraft.flip };
+      if (neckPaint) neckPaint();
+      return;
+    }
+    if (a === 'neck-save' || a === 'neck-cancel') {
+      const keep = a === 'neck-save';
+      if (keep && !Neck.isCalibrated(neckDraft)) return toast('סמן קודם את שלוש הנקודות', true);
+      const photo = pendingPortrait, cal = keep ? neckDraft : pendingNeck;
+      characterModal(charModalId);      // rebuilds the form from the stored record
+      restoreCharForm(charDraft);       // ...then puts back what was typed
+      pendingPortrait = photo;
+      pendingNeck = cal;
+      const lbl = $('#c-neck-label');
+      if (lbl) lbl.textContent = cal ? '✓ הצוואר מכויל — כייל מחדש' : 'כייל את הצוואר';
+      if (keep) toast('הכיול נשמר — לחץ "שמור דמות" כדי לשמור אותו לצמיתות');
+      return;
+    }
     if (a === 'pick-portrait') {
       const inp = document.createElement('input');
       inp.type = 'file'; inp.accept = 'image/*';
@@ -2434,6 +2715,10 @@ python scripts/extract_chords.py work/audio.wav --beats work/analysis.json --out
         loadPortrait(f, dataUrl => {
           if (!dataUrl) return;
           pendingPortrait = dataUrl;
+          // The old calibration described the old photograph, so it is gone.
+          pendingNeck = null;
+          const nl = $('#c-neck-label');
+          if (nl) nl.textContent = 'כייל את הצוואר';
           const prev = $('#c-portrait-prev');
           if (prev) { prev.src = dataUrl; prev.style.display = ''; }
           toast('התמונה צורפה');
@@ -2802,6 +3087,11 @@ python scripts/extract_chords.py work/audio.wav --beats work/analysis.json --out
     document.addEventListener('fullscreenchange', () => {
       if (!document.fullscreenElement && state.stageFocus) setStageFocus(false);
     });
+
+    // The overlay is drawn in pixels over a picture whose size follows the
+    // window, so it has to be repainted when that changes. Harmless when the
+    // stage is not showing it.
+    window.addEventListener('resize', () => drawNeckOverlay(liveChord()));
 
     P.init('yt-mount');
     P.on('state', () => { updatePlayerBar(); });
