@@ -142,7 +142,14 @@
 
   /* One key light, a dim fill from the other side so nothing goes solid
      black, and a rim term that makes the round parts read as round. The
-     specular is what separates fret wire and strings from wood. */
+     specular is what separates fret wire and strings from wood.
+
+     uWrap is what separates skin from everything else. Light entering skin
+     scatters under the surface and comes back out a little way around, so a
+     lit hand has no hard terminator: the shadow line is soft and reddens as
+     it turns away. Wrapping the diffuse term and tinting what it picks up on
+     the way costs two lines and does more for a hand looking like a hand
+     than any amount of extra geometry. */
   const FRAG = `
     precision mediump float;
     varying vec3 vNormal;
@@ -150,16 +157,24 @@
     uniform vec3 uColor;
     uniform vec3 uEye;
     uniform float uShine;
+    uniform float uWrap;
     void main() {
       vec3 n = normalize(vNormal);
       vec3 key = normalize(vec3(-0.45, 0.75, 0.5));
       vec3 fill = normalize(vec3(0.6, -0.2, 0.35));
       vec3 v = normalize(uEye - vWorld);
-      float d = max(dot(n, key), 0.0) * 0.95 + max(dot(n, fill), 0.0) * 0.22;
+      float w = uWrap;
+      float nk = (dot(n, key) + w) / (1.0 + w);
+      float nf = (dot(n, fill) + w) / (1.0 + w);
+      float d = max(nk, 0.0) * 0.95 + max(nf, 0.0) * 0.22;
+      // the reddening just past the terminator, where the light is coming
+      // back out of the surface rather than bouncing off it
+      float sss = uWrap * max(0.0, 1.0 - abs(dot(n, key)) * 3.0) * 0.5;
       vec3 h = normalize(key + v);
       float spec = pow(max(dot(n, h), 0.0), mix(12.0, 90.0, uShine)) * uShine;
-      float rim = pow(1.0 - max(dot(n, v), 0.0), 3.0) * 0.28;
-      vec3 c = uColor * (0.16 + d) + vec3(spec) + uColor * rim;
+      float rim = pow(1.0 - max(dot(n, v), 0.0), 3.0) * (0.28 - uWrap * 0.12);
+      vec3 warm = vec3(0.42, 0.10, 0.06);
+      vec3 c = uColor * (0.16 + d) + warm * sss + vec3(spec) + uColor * rim;
       gl_FragColor = vec4(c, 1.0);
     }`;
 
@@ -199,7 +214,7 @@
       normal: gl.getAttribLocation(prog, 'aNormal')
     };
     const U = {};
-    ['uModel', 'uViewProj', 'uNormal', 'uColor', 'uEye', 'uShine']
+    ['uModel', 'uViewProj', 'uNormal', 'uColor', 'uEye', 'uShine', 'uWrap']
       .forEach(n => { U[n] = gl.getUniformLocation(prog, n); });
 
     gl.enable(gl.DEPTH_TEST);
@@ -266,7 +281,7 @@
       gl.uniform3f(U.uEye, eye.x, eye.y, eye.z);
     }
 
-    function draw(m, model, color, shine) {
+    function draw(m, model, color, shine, wrap) {
       gl.bindBuffer(gl.ARRAY_BUFFER, m.pb);
       gl.enableVertexAttribArray(A.pos);
       gl.vertexAttribPointer(A.pos, 3, gl.FLOAT, false, 0, 0);
@@ -278,6 +293,7 @@
       gl.uniformMatrix3fv(U.uNormal, false, M4.normalMatrix(model));
       gl.uniform3f(U.uColor, color[0], color[1], color[2]);
       gl.uniform1f(U.uShine, shine == null ? 0.08 : shine);
+      gl.uniform1f(U.uWrap, wrap || 0);
       gl.drawElements(gl.TRIANGLES, m.count, m.type, 0);
     }
 

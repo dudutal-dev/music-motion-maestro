@@ -1460,7 +1460,11 @@ python scripts/build_sync_map.py work/analysis.json --chords work/chords.json --
   function startGl(canvas) {
     stopGl();
     try {
-      gl3d = Neck3D.create(canvas, { frets: 7 });
+      /* Twelve frets, not the seven the chords need. The extra five are never
+         played here; they run the neck out of the right-hand side of the
+         frame instead of ending it in mid-air, and they carry the twelfth's
+         double marker, which is the one a player uses to find position. */
+      gl3d = Neck3D.create(canvas, { frets: 12 });
     } catch (e) {
       gl3d = null;
       console.error(e);
