@@ -1,0 +1,69 @@
+{
+  "story_slug": "the-lantern-and-the-frost-prince",
+  "renderer": "vector-svg",
+  "aspect_ratio": "16:9",
+  "width": 1600,
+  "height": 900,
+  "shots": [
+    {
+      "index": 1,
+      "file": "the-lantern-and-the-frost-prince_part_01.svg",
+      "bytes": 34393
+    },
+    {
+      "index": 2,
+      "file": "the-lantern-and-the-frost-prince_part_02.svg",
+      "bytes": 32327
+    },
+    {
+      "index": 3,
+      "file": "the-lantern-and-the-frost-prince_part_03.svg",
+      "bytes": 27071
+    },
+    {
+      "index": 4,
+      "file": "the-lantern-and-the-frost-prince_part_04.svg",
+      "bytes": 24497
+    },
+    {
+      "index": 5,
+      "file": "the-lantern-and-the-frost-prince_part_05.svg",
+      "bytes": 29764
+    },
+    {
+      "index": 6,
+      "file": "the-lantern-and-the-frost-prince_part_06.svg",
+      "bytes": 45197
+    },
+    {
+      "index": 7,
+      "file": "the-lantern-and-the-frost-prince_part_07.svg",
+      "bytes": 28207
+    },
+    {
+      "index": 8,
+      "file": "the-lantern-and-the-frost-prince_part_08.svg",
+      "bytes": 44442
+    },
+    {
+      "index": 9,
+      "file": "the-lantern-and-the-frost-prince_part_09.svg",
+      "bytes": 40198
+    },
+    {
+      "index": 10,
+      "file": "the-lantern-and-the-frost-prince_part_10.svg",
+      "bytes": 18959
+    },
+    {
+      "index": 11,
+      "file": "the-lantern-and-the-frost-prince_part_11.svg",
+      "bytes": 19594
+    },
+    {
+      "index": 12,
+      "file": "the-lantern-and-the-frost-prince_part_12.svg",
+      "bytes": 55582
+    }
+  ]
+}
