@@ -1,0 +1,13 @@
+{
+  "story_slug": "the-lantern-and-the-frost-prince",
+  "story_title": "The Lantern and the Frost Prince",
+  "language": "en",
+  "pages": 14,
+  "scenes": 12,
+  "renderer": "vector-svg",
+  "audio": null,
+  "output": {
+    "html": "the-lantern-and-the-frost-prince.html",
+    "bytes": 447421
+  }
+}

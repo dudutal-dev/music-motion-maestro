@@ -1,0 +1,186 @@
+{
+  "story_slug": "the-lantern-and-the-frost-prince",
+  "story_title": "The Lantern and the Frost Prince",
+  "target_level": "beginner",
+  "language": "en",
+  "total_scenes": 12,
+  "scenes": [
+    {
+      "index": 1,
+      "role": "cover",
+      "panel_type": "establishing",
+      "text": "Deep in the snowy wood there stood one iron lamp-post. Nell lit it every single night. She was the last lamplighter left in all of Narnia.",
+      "char_count": 138,
+      "scene": "snowy wood at night",
+      "characters": [
+        "Nell"
+      ],
+      "aren_state": null,
+      "mood": "quiet, wondrous",
+      "dominant_action": "A small girl reaches up with a long brass lamplighter's pole to light a single black iron lamp-post standing alone in a vast snowy forest of birch and fir at night."
+    },
+    {
+      "index": 2,
+      "role": "body",
+      "panel_type": "reaction",
+      "text": "The winter had lasted a hundred years. No one walked the snowy path anymore. So Nell talked to the little flame, so that neither of them would be lonely.",
+      "char_count": 153,
+      "scene": "empty snowy path",
+      "characters": [
+        "Nell"
+      ],
+      "aren_state": null,
+      "mood": "lonely, tender",
+      "dominant_action": "Nell sits curled at the foot of the glowing lamp-post in deep snow, chin on her knees, talking softly up at the little flame; the snowy path behind her runs away empty into the dark trees."
+    },
+    {
+      "index": 3,
+      "role": "body",
+      "panel_type": "detail",
+      "text": "One night the light fell on something new. A statue of clear ice. A young man, frozen in the middle of a step, one hand reaching out.",
+      "char_count": 133,
+      "scene": "edge of the lamplight",
+      "characters": [
+        "Aren"
+      ],
+      "aren_state": "frozen",
+      "mood": "eerie, breathless",
+      "dominant_action": "The warm circle of lamplight falls on a young man made of clear blue ice, frozen mid-stride with one hand reaching out, snow heaped on his shoulders."
+    },
+    {
+      "index": 4,
+      "role": "body",
+      "panel_type": "action",
+      "text": "Nell brushed the snow from his face. \"Good evening,\" she said. She said it every night for a week. On the seventh night, the ice blinked.",
+      "char_count": 137,
+      "scene": "beside the ice statue",
+      "characters": [
+        "Nell",
+        "Aren"
+      ],
+      "aren_state": "frozen",
+      "mood": "gentle, startled",
+      "dominant_action": "Nell on tiptoe brushes snow from the frozen prince's cheek with her mitten, and one icy eye blinks open, catching the lamplight."
+    },
+    {
+      "index": 5,
+      "role": "body",
+      "panel_type": "reaction",
+      "text": "His name was Aren. He could only wake while the lamp was burning. Warm light gave him breath. When the flame went out at dawn, he turned back to ice. So Nell fed the flame all night long. And Aren told her about the world before the winter.",
+      "char_count": 240,
+      "scene": "under the lamp-post",
+      "characters": [
+        "Nell",
+        "Aren"
+      ],
+      "aren_state": "awake",
+      "mood": "fragile, magical",
+      "dominant_action": "Aren stands warm, breathing and human inside the ring of golden lamplight, telling stories, while just beyond the light's edge his trailing fingers still glitter hard with frost; Nell feeds the flame with a long taper."
+    },
+    {
+      "index": 6,
+      "role": "body",
+      "panel_type": "establishing",
+      "text": "They walked out onto the frozen river together. He showed her the drowned bells sleeping under the ice. She showed him a patch of green moss beneath a stone, the last green thing in the wood.",
+      "char_count": 191,
+      "scene": "frozen river at night",
+      "characters": [
+        "Nell",
+        "Aren"
+      ],
+      "aren_state": "awake",
+      "mood": "awed, curious",
+      "dominant_action": "Nell and Aren stand together on a wide frozen river under stars, looking down through clear ice at old drowned bells resting far below; at the bank she tips up a snowy stone to show him one small patch of bright green moss."
+    },
+    {
+      "index": 7,
+      "role": "body",
+      "panel_type": "action",
+      "text": "Night after night they laughed, and the long winter nights began to feel far too short. Nell burned her chair. She burned her books. She burned her wooden shoes, just to keep the flame alive.",
+      "char_count": 191,
+      "scene": "Nell's tiny stone hut",
+      "characters": [
+        "Nell",
+        "Aren"
+      ],
+      "aren_state": "awake",
+      "mood": "loving, reckless",
+      "dominant_action": "Laughing together beside her tiny stone hut, Nell feeds her wooden shoes and her books into the lamp's fire to keep it burning."
+    },
+    {
+      "index": 8,
+      "role": "body",
+      "panel_type": "reaction",
+      "text": "Then the oil ran out. White frost came creeping up the lamp-post. \"Let me freeze,\" said Aren. \"Go home and be warm.\"",
+      "char_count": 116,
+      "scene": "frost-covered lamp-post",
+      "characters": [
+        "Nell",
+        "Aren"
+      ],
+      "aren_state": "freezing",
+      "mood": "desperate, aching",
+      "dominant_action": "White frost creeps up the dimming lamp-post; Aren, half turned back to blue ice from the feet upward, holds Nell back and begs her to go home."
+    },
+    {
+      "index": 9,
+      "role": "body",
+      "panel_type": "action",
+      "text": "But Nell did not go home. She struck her last spark into the dry moss. She held his freezing hand in both of hers, and she would not let go, all through the night, all the way to the dawn.",
+      "char_count": 188,
+      "scene": "at the dying lamp",
+      "characters": [
+        "Nell",
+        "Aren"
+      ],
+      "aren_state": "freezing",
+      "mood": "fierce, devoted",
+      "dominant_action": "Kneeling in the snow, Nell strikes her last spark into the dry green moss and grips Aren's freezing hand in both of hers, refusing to let go as the night wears on."
+    },
+    {
+      "index": 10,
+      "role": "body",
+      "panel_type": "establishing",
+      "text": "Far away over the eastern hills, a lion roared. The sound rolled through the trees like thunder made of gold. And the ice began to crack.",
+      "char_count": 137,
+      "scene": "eastern hills at dawn",
+      "characters": [
+        "Nell",
+        "Aren"
+      ],
+      "aren_state": "freezing",
+      "mood": "vast, thunderous",
+      "dominant_action": "Seen from far off at first light, a great golden lion roars on a distant eastern ridge; cracks race across all the ice of the valley below and the tiny lamp still burns among the trees."
+    },
+    {
+      "index": 11,
+      "role": "body",
+      "panel_type": "reaction",
+      "text": "Spring came back to Narnia in a single morning. Aren woke up warm, with his heart beating, holding her hands.",
+      "char_count": 109,
+      "scene": "melting wood at sunrise",
+      "characters": [
+        "Nell",
+        "Aren"
+      ],
+      "aren_state": "awake",
+      "mood": "joyful, overwhelmed",
+      "dominant_action": "Aren wakes fully warm and human, eyes open, holding both of Nell's hands, as meltwater drips and sunrise pours gold through the thawing trees."
+    },
+    {
+      "index": 12,
+      "role": "closing",
+      "panel_type": "action",
+      "text": "Snowdrops opened everywhere. And still, every evening, the two of them lit the old lamp together, for anyone else who might be lost in the wood.",
+      "char_count": 144,
+      "scene": "spring wood at dusk",
+      "characters": [
+        "Nell",
+        "Aren"
+      ],
+      "aren_state": "awake",
+      "mood": "peaceful, glowing",
+      "dominant_action": "White snowdrops carpet the green spring wood as Nell and Aren reach up together to light the old iron lamp-post at dusk."
+    }
+  ]
+}
